@@ -54,5 +54,6 @@ restore normal runtime power management and avoid a possible idle-power cost.
 
 That design is implemented in the experimental
 [RT721 power-management patch](../../patches/rt721-power-management/). It has
-passed cold-boot and runtime-PM testing on the Claw 8 EX; a clean
-suspend/resume test remains before it can replace this fallback.
+passed cold-boot, runtime-PM, and speaker suspend/resume testing on the Claw 8
+EX. A clean microphone resume test without this fallback remains before the
+workaround can be retired.

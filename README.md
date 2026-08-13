@@ -11,7 +11,7 @@ CG3EM**, board **MS-1T91**.
 
 | Area | Fix | Status |
 | --- | --- | --- |
-| Audio | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Cold boot and runtime PM verified; suspend/resume pending |
+| Audio | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Cold boot, runtime PM, and speaker resume verified |
 | Audio | [Realtek RT721 SoundWire power workaround](fixes/audio-rt721/) | Working fallback; leaves hidden D0 gates enabled |
 
 The audio workaround is DMI-gated and refuses to run unless both the product
@@ -22,7 +22,7 @@ driver.
 The experimental kernel patch now implements that integration. It applies the
 model-specific D0 and D3 sequences around the existing RT721 runtime-PM and
 DAPM transitions. Keep using the packaged workaround until the patch's
-suspend/resume test is complete.
+helper-independent microphone resume test is complete.
 
 ## Quick start
 

@@ -42,11 +42,16 @@ Verified on the exact hardware above:
 - codec runtime D3 followed by clean D0 reactivation
 - amplifier D0 at playback start and D3 after the stream closed
 - microphone D0 at capture start and D3 after the stream closed
+- three s2idle cycles where the driver put the amplifier and codec into D3,
+  restored both to D0 before `PM: suspend exit`, and speaker audio worked after
+  resume
 - no MBQ access, power-sequence, verification, SoundWire bus-clash, or retry
   errors during those tests
 
-System suspend/resume without the legacy post-resume helper is still pending.
-Treat the patch as experimental until that test passes.
+The legacy post-resume helper ran after the driver's successful D0 transitions
+during those cycles. That does not account for the observed codec or speaker
+recovery, but it can still mask microphone resume behavior. A final s2idle
+cycle with that hook bypassed remains before the workaround can be retired.
 
 ## Upstream submission note
 
@@ -59,4 +64,5 @@ trailer records the AI assistance used while developing and testing it.
 
 The [DKMS workaround](../../fixes/audio-rt721/) remains the recovery path. Its
 boot service and post-resume hook are redundant with this patch and can mask a
-resume regression, so disable them for a clean patched-kernel suspend test.
+microphone resume regression, so bypass them for the final clean patched-kernel
+suspend test.

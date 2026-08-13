@@ -109,7 +109,9 @@ sequences to RT721 runtime power management so unused blocks can power down.
 An experimental implementation of that integration is available as the
 [RT721 in-driver power-management patch](../../patches/rt721-power-management/).
 Cold boot, playback, capture, and runtime D0/D3 transitions are verified;
-suspend/resume testing without this workaround is still pending.
+the driver also restored codec and speaker power before suspend exit across
+three s2idle cycles. A helper-independent microphone resume test is still
+pending.
 
 See [TECHNICAL.md](TECHNICAL.md) for register-level notes and the upstreaming
 direction.
