@@ -1,0 +1,511 @@
+From 57ac7b3e0e846562561aab256d621590d9da8452 Mon Sep 17 00:00:00 2001
+From: stevedamnvan <100538383+stevedamnvan@users.noreply.github.com>
+Date: Thu, 13 Aug 2026 18:43:50 -0400
+Subject: [PATCH] ASoC: rt721-sdca: add MSI Claw 8 EX power sequencing
+
+The RT721 on the MSI Claw 8 EX AI+ exposes jack, smart-amplifier, and
+smart-microphone functions, but its vendor analog power gates are not
+controlled by the generic SDCA power-state requests. This leaves the
+internal speakers and microphone silent.
+
+Add an exact DMI-scoped quirk which runs and verifies the required codec,
+amplifier, and microphone D0/D3 sequences around the existing runtime-PM
+and DAPM transitions. Keep the vendor registers volatile so regcache does
+not replay stale power state.
+
+Tested on an MSI Claw 8 EX AI+ CG3EM (MS-1T91) with Linux 7.2-rc7: cold
+boot, HiFi enumeration, speaker playback, microphone capture, and repeated
+runtime D0/D3 transitions.
+
+Assisted-by: OpenAI-Codex:GPT-5 [functions.exec] [apply_patch]
+---
+ sound/soc/codecs/rt721-sdca-sdw.c |  30 +++-
+ sound/soc/codecs/rt721-sdca.c     | 247 +++++++++++++++++++++++++++++-
+ sound/soc/codecs/rt721-sdca.h     |   6 +
+ 3 files changed, 280 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/codecs/rt721-sdca-sdw.c b/sound/soc/codecs/rt721-sdca-sdw.c
+index 041b381e5..3bb6c40a1 100644
+--- a/sound/soc/codecs/rt721-sdca-sdw.c
++++ b/sound/soc/codecs/rt721-sdca-sdw.c
+@@ -62,6 +62,10 @@ static bool rt721_sdca_volatile_register(struct device *dev, unsigned int reg)
+ static bool rt721_sdca_mbq_readable_register(struct device *dev, unsigned int reg)
+ {
+ 	switch (reg) {
++	case 0x010000c:
++	case 0x010000e:
++	case 0x0100011:
++	case 0x0100013:
+ 	case 0x0900004 ... 0x0900009:
+ 	case 0x0a00005:
+ 	case 0x0c00005:
+@@ -79,6 +83,9 @@ static bool rt721_sdca_mbq_readable_register(struct device *dev, unsigned int re
+ 	case 0x5810039:
+ 	case 0x5b10018:
+ 	case 0x5b10019:
++	case 0x5f00000:
++	case 0x5f00020:
++	case 0x5f00030:
+ 	case 0x5f00045:
+ 	case 0x5f00048:
+ 	case 0x6100000:
+@@ -90,6 +97,7 @@ static bool rt721_sdca_mbq_readable_register(struct device *dev, unsigned int re
+ 	case 0x6100013:
+ 	case 0x6100015:
+ 	case 0x6100017:
++	case 0x610001a:
+ 	case 0x6100025:
+ 	case 0x6100029:
+ 	case 0x610002c ... 0x610002f:
+@@ -131,6 +139,10 @@ static bool rt721_sdca_mbq_readable_register(struct device *dev, unsigned int re
+ static bool rt721_sdca_mbq_volatile_register(struct device *dev, unsigned int reg)
+ {
+ 	switch (reg) {
++	case 0x010000c:
++	case 0x010000e:
++	case 0x0100011:
++	case 0x0100013:
+ 	case 0x0310100:
+ 	case 0x0900005:
+ 	case 0x0900009:
+@@ -154,6 +166,10 @@ static bool rt721_sdca_mbq_volatile_register(struct device *dev, unsigned int re
+ 	case 0x5810039:
+ 	case 0x5b10018:
+ 	case 0x5b10019:
++	case 0x5f00000:
++	case 0x5f00020:
++	case 0x5f00030:
++	case 0x610001a:
+ 		return true;
+ 	default:
+ 		return false;
+@@ -423,7 +439,7 @@ static void rt721_sdca_sdw_remove(struct sdw_slave *slave)
+ 		cancel_delayed_work_sync(&rt721->jack_btn_check_work);
+ 	}
+ 
+-	if (rt721->first_hw_init)
++	if (rt721->pm_runtime_enabled)
+ 		pm_runtime_disable(&slave->dev);
+ 
+ 	mutex_destroy(&rt721->calibrate_mutex);
+@@ -439,12 +455,16 @@ MODULE_DEVICE_TABLE(sdw, rt721_sdca_id);
+ static int rt721_sdca_dev_suspend(struct device *dev)
+ {
+ 	struct rt721_sdca_priv *rt721 = dev_get_drvdata(dev);
++	int ret;
+ 
+ 	if (!rt721->hw_init)
+ 		return 0;
+ 
+ 	cancel_delayed_work_sync(&rt721->jack_detect_work);
+ 	cancel_delayed_work_sync(&rt721->jack_btn_check_work);
++	ret = rt721_sdca_msi_claw_codec_power(rt721, false);
++	if (ret)
++		return ret;
+ 
+ 	regcache_cache_only(rt721->regmap, true);
+ 	regcache_cache_only(rt721->mbq_regmap, true);
+@@ -510,8 +530,14 @@ static int rt721_sdca_dev_resume(struct device *dev)
+ 	}
+ 
+ 	regcache_cache_only(rt721->regmap, false);
+-	regcache_sync(rt721->regmap);
+ 	regcache_cache_only(rt721->mbq_regmap, false);
++	ret = rt721_sdca_msi_claw_codec_power(rt721, true);
++	if (ret) {
++		regcache_cache_only(rt721->regmap, true);
++		regcache_cache_only(rt721->mbq_regmap, true);
++		return ret;
++	}
++	regcache_sync(rt721->regmap);
+ 	regcache_sync(rt721->mbq_regmap);
+ 	return 0;
+ }
+diff --git a/sound/soc/codecs/rt721-sdca.c b/sound/soc/codecs/rt721-sdca.c
+index 35960c225..e1c921734 100644
+--- a/sound/soc/codecs/rt721-sdca.c
++++ b/sound/soc/codecs/rt721-sdca.c
+@@ -9,6 +9,7 @@
+ #include <linux/bitops.h>
+ #include <sound/core.h>
+ #include <linux/delay.h>
++#include <linux/dmi.h>
+ #include <linux/init.h>
+ #include <sound/initval.h>
+ #include <sound/jack.h>
+@@ -26,6 +27,214 @@
+ #include "rt721-sdca.h"
+ #include "rt-sdw-common.h"
+ 
++struct rt721_sdca_power_step {
++	unsigned int nid;
++	unsigned int reg;
++	unsigned int mask;
++	unsigned int value;
++};
++
++struct rt721_sdca_power_target {
++	unsigned int nid;
++	unsigned int reg;
++	unsigned int mask;
++};
++
++static const struct dmi_system_id rt721_sdca_quirk_table[] = {
++	{
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR,
++					"Micro-Star International Co., Ltd."),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME,
++					"Claw 8 EX AI+ CG3EM"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME, "MS-1T91"),
++		},
++		.driver_data = (void *)RT721_SDCA_QUIRK_MSI_CLAW_8_EX,
++	},
++	{}
++};
++MODULE_DEVICE_TABLE(dmi, rt721_sdca_quirk_table);
++
++static const struct rt721_sdca_power_step rt721_sdca_claw_codec_d0[] = {
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(15), BIT(15) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(14), BIT(14) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(13), BIT(13) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(12), BIT(12) },
++	{ RT721_ANA_POW_PART, 0x11, BIT(15), BIT(15) },
++	{ RT721_ANA_POW_PART, 0x0c, BIT(15), BIT(15) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(3), BIT(3) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(10), BIT(10) },
++	{ RT721_ANA_POW_PART, 0x13, BIT(6), BIT(6) },
++	{ RT721_ANA_POW_PART, 0x0e, BIT(3), BIT(3) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(2), BIT(2) },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(9), BIT(9) },
++	{ RT721_HDA_SDCA_FLOAT, RT721_UMP_HID_CTRL3, BIT(15), BIT(15) },
++	{ RT721_HDA_SDCA_FLOAT, RT721_UMP_HID_CTRL3, BIT(15), 0 },
++};
++
++static const struct rt721_sdca_power_step rt721_sdca_claw_codec_d3[] = {
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(15), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(14), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(13), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(12), 0 },
++	{ RT721_ANA_POW_PART, 0x11, BIT(15), 0 },
++	{ RT721_ANA_POW_PART, 0x0c, BIT(15), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(3), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(10), 0 },
++	{ RT721_ANA_POW_PART, 0x13, BIT(6), 0 },
++	{ RT721_ANA_POW_PART, 0x0e, BIT(3), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(2), 0 },
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, BIT(9), 0 },
++};
++
++static const struct rt721_sdca_power_target rt721_sdca_claw_codec_targets[] = {
++	{ RT721_VENDOR_ANA_CTL, RT721_MISC_POWER_CTL0, 0xf60c },
++	{ RT721_ANA_POW_PART, 0x11, BIT(15) },
++	{ RT721_ANA_POW_PART, 0x0c, BIT(15) },
++	{ RT721_ANA_POW_PART, 0x13, BIT(6) },
++	{ RT721_ANA_POW_PART, 0x0e, BIT(3) },
++};
++
++static const unsigned int rt721_sdca_claw_path_d0[] = {
++	BIT(11), BIT(10), BIT(5), BIT(0), BIT(9), BIT(4),
++	BIT(2), BIT(12), BIT(13), BIT(14), BIT(15),
++};
++
++static const unsigned int rt721_sdca_claw_path_d3[] = {
++	BIT(15), BIT(14), BIT(13), BIT(12), BIT(5), BIT(4),
++	BIT(2), BIT(10), BIT(11), BIT(9), BIT(0),
++};
++
++static int rt721_sdca_run_power_sequence(struct rt721_sdca_priv *rt721,
++					 const struct rt721_sdca_power_step *steps,
++					 size_t num_steps)
++{
++	size_t i;
++	int ret;
++
++	for (i = 0; i < num_steps; i++) {
++		ret = rt_sdca_index_update_bits(rt721->mbq_regmap,
++						steps[i].nid, steps[i].reg,
++						steps[i].mask, steps[i].value);
++		if (ret) {
++			dev_err(&rt721->slave->dev,
++				"power sequence step %zu failed: %d\n", i, ret);
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++static int rt721_sdca_verify_power_targets(struct rt721_sdca_priv *rt721,
++					   const struct rt721_sdca_power_target *targets,
++					   size_t num_targets, bool power_up)
++{
++	unsigned int expected, value;
++	size_t i;
++	int ret;
++
++	for (i = 0; i < num_targets; i++) {
++		ret = rt_sdca_index_read(rt721->mbq_regmap, targets[i].nid,
++					 targets[i].reg, &value);
++		if (ret)
++			return ret;
++
++		expected = power_up ? targets[i].mask : 0;
++		if ((value & targets[i].mask) != expected) {
++			dev_err(&rt721->slave->dev,
++				"power register %02x:%02x verification failed: %#x\n",
++				targets[i].nid, targets[i].reg, value);
++			return -EIO;
++		}
++	}
++
++	return 0;
++}
++
++int rt721_sdca_msi_claw_codec_power(struct rt721_sdca_priv *rt721,
++				    bool power_up)
++{
++	const struct rt721_sdca_power_target *targets = rt721_sdca_claw_codec_targets;
++	const struct rt721_sdca_power_step *steps;
++	size_t num_targets = ARRAY_SIZE(rt721_sdca_claw_codec_targets);
++	size_t num_steps;
++	int ret;
++
++	if (!(rt721->quirks & RT721_SDCA_QUIRK_MSI_CLAW_8_EX))
++		return 0;
++
++	if (power_up) {
++		steps = rt721_sdca_claw_codec_d0;
++		num_steps = ARRAY_SIZE(rt721_sdca_claw_codec_d0);
++	} else {
++		steps = rt721_sdca_claw_codec_d3;
++		num_steps = ARRAY_SIZE(rt721_sdca_claw_codec_d3);
++	}
++
++	ret = rt721_sdca_run_power_sequence(rt721, steps, num_steps);
++	if (ret)
++		return ret;
++
++	ret = rt721_sdca_verify_power_targets(rt721, targets, num_targets, power_up);
++	if (!ret)
++		dev_dbg(&rt721->slave->dev, "MSI Claw codec entered D%d\n",
++			power_up ? 0 : 3);
++
++	return ret;
++}
++
++static int rt721_sdca_msi_claw_path_power(struct rt721_sdca_priv *rt721,
++					  unsigned int reg,
++					  const char *name, bool power_up)
++{
++	const unsigned int *bits;
++	unsigned int expected, value;
++	size_t num_bits, i;
++	int ret;
++
++	if (!(rt721->quirks & RT721_SDCA_QUIRK_MSI_CLAW_8_EX))
++		return 0;
++
++	if (power_up) {
++		bits = rt721_sdca_claw_path_d0;
++		num_bits = ARRAY_SIZE(rt721_sdca_claw_path_d0);
++	} else {
++		bits = rt721_sdca_claw_path_d3;
++		num_bits = ARRAY_SIZE(rt721_sdca_claw_path_d3);
++	}
++
++	for (i = 0; i < num_bits; i++) {
++		ret = rt_sdca_index_update_bits(rt721->mbq_regmap,
++						RT721_VENDOR_ANA_CTL, reg,
++						bits[i], power_up ? bits[i] : 0);
++		if (ret) {
++			dev_err(&rt721->slave->dev,
++				"%s power sequence step %zu failed: %d\n",
++				name, i, ret);
++			return ret;
++		}
++	}
++
++	ret = rt_sdca_index_read(rt721->mbq_regmap, RT721_VENDOR_ANA_CTL,
++				 reg, &value);
++	if (ret)
++		return ret;
++
++	expected = power_up ? 0xfe35 : 0;
++	if ((value & 0xfe35) != expected) {
++		dev_err(&rt721->slave->dev,
++			"%s power register verification failed: %#x\n",
++			name, value);
++		return -EIO;
++	}
++
++	dev_dbg(&rt721->slave->dev, "MSI Claw %s entered D%d\n", name,
++		power_up ? 0 : 3);
++
++	return 0;
++}
++
+ static void rt721_sdca_jack_detect_handler(struct work_struct *work)
+ {
+ 	struct rt721_sdca_priv *rt721 =
+@@ -1046,9 +1255,13 @@ static int rt721_sdca_pde41_event(struct snd_soc_dapm_widget *w,
+ 		snd_soc_dapm_to_component(w->dapm);
+ 	struct rt721_sdca_priv *rt721 = snd_soc_component_get_drvdata(component);
+ 	unsigned char ps0 = 0x0, ps3 = 0x3;
++	int ret;
+ 
+ 	switch (event) {
+ 	case SND_SOC_DAPM_POST_PMU:
++		ret = rt721_sdca_msi_claw_path_power(rt721, 0x20, "amplifier", true);
++		if (ret)
++			return ret;
+ 		regmap_write(rt721->regmap,
+ 			SDW_SDCA_CTL(FUNC_NUM_AMP, RT721_SDCA_ENT_PDE41,
+ 				RT721_SDCA_CTL_REQ_POWER_STATE, 0), ps0);
+@@ -1057,6 +1270,9 @@ static int rt721_sdca_pde41_event(struct snd_soc_dapm_widget *w,
+ 		regmap_write(rt721->regmap,
+ 			SDW_SDCA_CTL(FUNC_NUM_AMP, RT721_SDCA_ENT_PDE41,
+ 				RT721_SDCA_CTL_REQ_POWER_STATE, 0), ps3);
++		ret = rt721_sdca_msi_claw_path_power(rt721, 0x20, "amplifier", false);
++		if (ret)
++			return ret;
+ 		break;
+ 	}
+ 	return 0;
+@@ -1069,9 +1285,13 @@ static int rt721_sdca_pde11_event(struct snd_soc_dapm_widget *w,
+ 		snd_soc_dapm_to_component(w->dapm);
+ 	struct rt721_sdca_priv *rt721 = snd_soc_component_get_drvdata(component);
+ 	unsigned char ps0 = 0x0, ps3 = 0x3;
++	int ret;
+ 
+ 	switch (event) {
+ 	case SND_SOC_DAPM_POST_PMU:
++		ret = rt721_sdca_msi_claw_path_power(rt721, 0x30, "microphone", true);
++		if (ret)
++			return ret;
+ 		regmap_write(rt721->regmap,
+ 			SDW_SDCA_CTL(FUNC_NUM_MIC_ARRAY, RT721_SDCA_ENT_PDE2A,
+ 				RT721_SDCA_CTL_REQ_POWER_STATE, 0), ps0);
+@@ -1080,6 +1300,9 @@ static int rt721_sdca_pde11_event(struct snd_soc_dapm_widget *w,
+ 		regmap_write(rt721->regmap,
+ 			SDW_SDCA_CTL(FUNC_NUM_MIC_ARRAY, RT721_SDCA_ENT_PDE2A,
+ 				RT721_SDCA_CTL_REQ_POWER_STATE, 0), ps3);
++		ret = rt721_sdca_msi_claw_path_power(rt721, 0x30, "microphone", false);
++		if (ret)
++			return ret;
+ 		break;
+ 	}
+ 	return 0;
+@@ -1467,6 +1690,7 @@ static struct snd_soc_dai_driver rt721_sdca_dai[] = {
+ int rt721_sdca_init(struct device *dev, struct regmap *regmap,
+ 			struct regmap *mbq_regmap, struct sdw_slave *slave)
+ {
++	const struct dmi_system_id *dmi_id;
+ 	struct rt721_sdca_priv *rt721;
+ 
+ 	rt721 = devm_kzalloc(dev, sizeof(*rt721), GFP_KERNEL);
+@@ -1477,6 +1701,11 @@ int rt721_sdca_init(struct device *dev, struct regmap *regmap,
+ 	rt721->slave = slave;
+ 	rt721->regmap = regmap;
+ 	rt721->mbq_regmap = mbq_regmap;
++	dmi_id = dmi_first_match(rt721_sdca_quirk_table);
++	if (dmi_id) {
++		rt721->quirks = (unsigned long)dmi_id->driver_data;
++		dev_info(dev, "enabling MSI Claw 8 EX power sequencing quirk\n");
++	}
+ 
+ 	regcache_cache_only(rt721->regmap, true);
+ 	regcache_cache_only(rt721->mbq_regmap, true);
+@@ -1493,6 +1722,7 @@ int rt721_sdca_init(struct device *dev, struct regmap *regmap,
+ 	 */
+ 	rt721->hw_init = false;
+ 	rt721->first_hw_init = false;
++	rt721->pm_runtime_enabled = false;
+ 	rt721->fu1e_dapm_mute = true;
+ 	rt721->fu0f_dapm_mute = true;
+ 	rt721->fu0f_mixer_l_mute = rt721->fu0f_mixer_r_mute = true;
+@@ -1506,6 +1736,7 @@ int rt721_sdca_init(struct device *dev, struct regmap *regmap,
+ int rt721_sdca_io_init(struct device *dev, struct sdw_slave *slave)
+ {
+ 	struct rt721_sdca_priv *rt721 = dev_get_drvdata(dev);
++	int ret;
+ 
+ 	rt721->disable_irq = false;
+ 
+@@ -1517,7 +1748,7 @@ int rt721_sdca_io_init(struct device *dev, struct sdw_slave *slave)
+ 	if (rt721->first_hw_init) {
+ 		regcache_cache_bypass(rt721->regmap, true);
+ 		regcache_cache_bypass(rt721->mbq_regmap, true);
+-	} else {
++	} else if (!rt721->pm_runtime_enabled) {
+ 		/*
+ 		 * PM runtime is only enabled when a Slave reports as Attached
+ 		 */
+@@ -1533,12 +1764,16 @@ int rt721_sdca_io_init(struct device *dev, struct sdw_slave *slave)
+ 		pm_runtime_mark_last_busy(&slave->dev);
+ 
+ 		pm_runtime_enable(&slave->dev);
++		rt721->pm_runtime_enabled = true;
+ 	}
+ 
+ 	pm_runtime_get_noresume(&slave->dev);
+ 	rt721_sdca_dmic_preset(rt721);
+ 	rt721_sdca_amp_preset(rt721);
+ 	rt721_sdca_jack_preset(rt721);
++	ret = rt721_sdca_msi_claw_codec_power(rt721, true);
++	if (ret)
++		goto err_power;
+ 	if (rt721->first_hw_init) {
+ 		regcache_cache_bypass(rt721->regmap, false);
+ 		regcache_mark_dirty(rt721->regmap);
+@@ -1554,6 +1789,16 @@ int rt721_sdca_io_init(struct device *dev, struct sdw_slave *slave)
+ 
+ 	dev_dbg(&slave->dev, "%s hw_init complete\n", __func__);
+ 	return 0;
++
++err_power:
++	if (rt721->first_hw_init) {
++		regcache_cache_bypass(rt721->regmap, false);
++		regcache_cache_bypass(rt721->mbq_regmap, false);
++	}
++	regcache_cache_only(rt721->regmap, true);
++	regcache_cache_only(rt721->mbq_regmap, true);
++	pm_runtime_put_noidle(&slave->dev);
++	return ret;
+ }
+ 
+ MODULE_DESCRIPTION("ASoC RT721 SDCA SDW driver");
+diff --git a/sound/soc/codecs/rt721-sdca.h b/sound/soc/codecs/rt721-sdca.h
+index 24ce18856..381b10c5c 100644
+--- a/sound/soc/codecs/rt721-sdca.h
++++ b/sound/soc/codecs/rt721-sdca.h
+@@ -21,8 +21,10 @@ struct  rt721_sdca_priv {
+ 	struct snd_soc_component *component;
+ 	struct sdw_slave *slave;
+ 	struct sdw_bus_params params;
++	unsigned long quirks;
+ 	bool hw_init;
+ 	bool first_hw_init;
++	bool pm_runtime_enabled;
+ 	struct mutex calibrate_mutex;
+ 	struct mutex disable_irq_lock;
+ 	bool disable_irq;
+@@ -42,6 +44,8 @@ struct  rt721_sdca_priv {
+ 	bool fu1e_mixer_mute[4];
+ };
+ 
++#define RT721_SDCA_QUIRK_MSI_CLAW_8_EX		BIT(0)
++
+ struct rt721_sdca_dmic_kctrl_priv {
+ 	unsigned int reg_base;
+ 	unsigned int count;
+@@ -271,4 +275,6 @@ enum {
+ int rt721_sdca_io_init(struct device *dev, struct sdw_slave *slave);
+ int rt721_sdca_init(struct device *dev, struct regmap *regmap,
+ 			struct regmap *mbq_regmap, struct sdw_slave *slave);
++int rt721_sdca_msi_claw_codec_power(struct rt721_sdca_priv *rt721,
++				    bool power_up);
+ #endif /* __RT721_H__ */
+-- 
+2.55.0
+

@@ -51,3 +51,8 @@ The standalone module is deliberately narrow and temporary. The maintainable
 fix is a DMI/subsystem-specific quirk in the RT721 codec path that runs the D0
 sequence on activation and the matching D3 sequence on power-down. That would
 restore normal runtime power management and avoid a possible idle-power cost.
+
+That design is implemented in the experimental
+[RT721 power-management patch](../../patches/rt721-power-management/). It has
+passed cold-boot and runtime-PM testing on the Claw 8 EX; a clean
+suspend/resume test remains before it can replace this fallback.
