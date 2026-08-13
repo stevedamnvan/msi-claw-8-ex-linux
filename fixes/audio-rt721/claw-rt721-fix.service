@@ -1,0 +1,17 @@
+[Unit]
+Description=MSI Claw 8 EX AI+ RT721 audio power initialization
+Documentation=https://github.com/stevedamnvan/msi-claw-8-ex-linux/tree/main/fixes/audio-rt721
+Documentation=file:/usr/src/claw-rt721-fix-0.1.0/README.md
+After=sound.target
+Wants=sound.target
+ConditionPathExists=/sys/bus/soundwire/devices/sdw:0:3:025d:0721:01
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/modprobe claw_rt721_amp apply_codec=1 apply=1 apply_mic=1
+ExecStart=/usr/bin/rmmod claw_rt721_amp
+RemainAfterExit=yes
+TimeoutStartSec=20
+
+[Install]
+WantedBy=multi-user.target

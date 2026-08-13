@@ -1,0 +1,42 @@
+# Maintainer: stevedamnvan <100538383+stevedamnvan@users.noreply.github.com>
+
+pkgname=claw-rt721-fix-dkms
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='RT721 speaker and microphone power workaround for MSI Claw 8 EX AI+'
+arch=('x86_64')
+url='https://github.com/stevedamnvan/msi-claw-8-ex-linux'
+license=('GPL-2.0-only')
+depends=('dkms' 'clang')
+optdepends=(
+	'linux-cachyos-rc-headers: headers for the tested CachyOS RC kernel'
+	'linux-cachyos-headers: headers for the stable CachyOS kernel'
+	'linux-headers: headers for the standard Arch kernel'
+)
+source=(
+	'claw_rt721_amp.c'
+	'Makefile'
+	'dkms.conf'
+	'README.md'
+	'claw-rt721-fix.service'
+	'claw-rt721-fix-sleep'
+)
+sha256sums=('c4199f686c2d2c4c96b1aa09926df73188ad9d955de40ce972559dc7570b4d41'
+            'c088b367ffcb3a4d471248cc2a576cfaaa340bdb384918669c38bc068b7274ba'
+            '34aac24d65ed41876ba0fa8384b590e38177b86a444a92161fec2315a7b734be'
+            '0132fab5fabf2409fece3e9f0e97ad5f187424be2950a25e5349f9ed744133a2'
+            'dc17ab674d01444bca7a9dfbdd21e004bc20c78dd39fa578f067f06e7c52d3af'
+            '1c2bf3210e69d72f4de5c8de331807144f2371f681c725c4906e5f017f3b4bb3')
+
+package() {
+	local dkms_dir="$pkgdir/usr/src/claw-rt721-fix-$pkgver"
+
+	install -Dm644 claw_rt721_amp.c "$dkms_dir/claw_rt721_amp.c"
+	install -Dm644 Makefile "$dkms_dir/Makefile"
+	install -Dm644 dkms.conf "$dkms_dir/dkms.conf"
+	install -Dm644 README.md "$dkms_dir/README.md"
+	install -Dm644 claw-rt721-fix.service \
+		"$pkgdir/usr/lib/systemd/system/claw-rt721-fix.service"
+	install -Dm755 claw-rt721-fix-sleep \
+		"$pkgdir/usr/lib/systemd/system-sleep/claw-rt721-fix"
+}

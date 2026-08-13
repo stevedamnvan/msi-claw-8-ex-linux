@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -eu
+
+if [[ ${1:-} == post ]] &&
+	/usr/bin/systemctl is-enabled --quiet claw-rt721-fix.service; then
+	/usr/bin/systemctl restart claw-rt721-fix.service
+fi

@@ -1,0 +1,25 @@
+# Kernel module build output
+*.ko
+*.cmd
+*.mod
+*.mod.c
+*.o
+*.order
+*.symvers
+.tmp_versions/
+
+# Arch package output
+pkg/
+src/
+*.pkg.tar.*
+
+# Local editor and test output
+*~
+*.swp
+*.wav
+
+# Never publish vendor driver payloads
+RTKDAT*
+*.dat
+*.sys
+*.zip
