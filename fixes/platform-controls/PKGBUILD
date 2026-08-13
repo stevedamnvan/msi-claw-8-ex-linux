@@ -1,0 +1,45 @@
+# Maintainer: stevedamnvan <100538383+stevedamnvan@users.noreply.github.com>
+
+pkgname=claw-msi-wmi-platform-dkms
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='SteamOS MSI WMI TDP, profile, fan, and charge controls for MSI Claw 8 EX AI+'
+arch=('x86_64')
+url='https://github.com/stevedamnvan/msi-claw-8-ex-linux'
+license=('GPL-2.0-or-later')
+depends=('dkms' 'clang')
+optdepends=(
+	'linux-cachyos-rc-headers: headers for the tested CachyOS RC kernel'
+	'linux-cachyos-headers: headers for the stable CachyOS kernel'
+	'linux-headers: headers for the standard Arch kernel'
+	'steamos-manager: Steam gaming-mode TDP and GPU-clock integration'
+)
+install=claw-msi-wmi-platform.install
+_upstream_commit=002ae467a84c83b07727e38511d3ce9c6ce3b603
+source=(
+	"msi-wmi-platform.c::https://raw.githubusercontent.com/evlaV/linux-integration/${_upstream_commit}/drivers/platform/x86/msi-wmi-platform.c"
+	"firmware_attributes_class.h::https://raw.githubusercontent.com/evlaV/linux-integration/${_upstream_commit}/drivers/platform/x86/firmware_attributes_class.h"
+	'Makefile'
+	'dkms.conf'
+	'claw-platform-controls-status'
+	'README.md'
+)
+sha256sums=('42a84398417c375272444f0415cfc3228d03299d86d442fadbc1bb85a35f7437'
+            '1b12e8397c0f0b0eb48e8fada57a38b0bc8c795fc2f608cc040d54d373650672'
+            '4b6a1a332541242764ad2ae101db934ae095a0361cdc6da9b76a6bfc6be1133f'
+            '0b0644ad5d962e045a4a0210ddd02f3b55333af0f06dcf62ec85142af0c928f6'
+            '3ec6d23cd0d0986a0635f0427ce8c22b7df9cecce8f286dfee45bea5c28b7798'
+            '78a4dcf40d2952aa068564683cb965421a082798c5348e3a47d6d932383d1a2c')
+
+package() {
+	local dkms_dir="$pkgdir/usr/src/claw-msi-wmi-platform-$pkgver"
+
+	install -Dm644 msi-wmi-platform.c "$dkms_dir/msi-wmi-platform.c"
+	install -Dm644 firmware_attributes_class.h \
+		"$dkms_dir/firmware_attributes_class.h"
+	install -Dm644 Makefile "$dkms_dir/Makefile"
+	install -Dm644 dkms.conf "$dkms_dir/dkms.conf"
+	install -Dm644 README.md "$dkms_dir/README.md"
+	install -Dm755 claw-platform-controls-status \
+		"$pkgdir/usr/bin/claw-platform-controls-status"
+}

@@ -1,0 +1,18 @@
+post_install() {
+	cat <<'EOF'
+The MSI platform-controls module was installed for available kernels.
+Reboot before testing it; do not unload the active MSI WMI driver while its
+fan and platform-profile interfaces are in use.
+EOF
+}
+
+post_upgrade() {
+	post_install
+}
+
+post_remove() {
+	cat <<'EOF'
+The DKMS override was removed. Reboot to return to the kernel's in-tree MSI
+WMI driver.
+EOF
+}
