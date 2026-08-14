@@ -29,7 +29,7 @@ sha256sums=('42a84398417c375272444f0415cfc3228d03299d86d442fadbc1bb85a35f7437'
             'b6cc64af7495d7b44cf4b7c66048eadeec73246fff20c4e983937a58cc7f96a0'
             'a6f599ae82aa5461f38b088b2aad593090a8cf61090b8f02208296a7face4c40'
             '028d595c378e96089e28c0805beb0235e2b336da7b96e1aaa0334e5c6affc339'
-            '78a4dcf40d2952aa068564683cb965421a082798c5348e3a47d6d932383d1a2c')
+            '6b8d7d6c839eb79243cab838bd7becd73473d668f1fa8c1a310be1d5bd14f0d8')
 
 package() {
 	local dkms_dir="$pkgdir/usr/src/claw-msi-wmi-platform-$pkgver"

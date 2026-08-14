@@ -65,7 +65,7 @@ modinfo -n msi_wmi_platform
 The path should contain `updates/dkms`. Then check the exported controls:
 
 ```bash
-cat /sys/class/platform-profile/msi-wmi-platform/choices
+grep -H . /sys/class/platform-profile/platform-profile-*/{name,choices,profile}
 find /sys/class/firmware-attributes/msi-wmi-platform/attributes \
   -maxdepth 2 -type f -print
 sensors
