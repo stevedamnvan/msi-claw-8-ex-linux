@@ -1,123 +1,87 @@
 # MSI Claw 8 EX AI+ Linux fixes
 
-My experimental Arch Linux and CachyOS fixes for the **MSI Claw 8 EX AI+
+My journey getting Arch Linux and CachyOS working on the **MSI Claw 8 EX AI+
 CG3EM**, board **MS-1T91**.
 
 > [!WARNING]
-> These fixes are hardware-specific. The Claw 8 AI+ A2VM (non-EX) uses a
-> different platform and audio path and is not supported by this repository.
+> This repository supports only the Claw 8 EX AI+ CG3EM / MS-1T91. The Claw 8
+> AI+ A2VM (non-EX) has different hardware and is not supported.
 
 ## About this project
 
-This repository documents my journey getting Linux working well on the Claw 8
-EX. I am sharing what worked for me so other owners have a practical starting
-point and so Linux, SteamOS, MangoHud, Arch Linux, and CachyOS developers have
-clear evidence that can help shape proper fixes.
+This repository collects the fixes that worked for me. I am sharing them to
+give other Claw EX owners a practical starting point and to provide useful
+evidence for proper Linux, SteamOS, MangoHud, Arch Linux, and CachyOS support.
 
-This is an unofficial, experimental project, not an MSI, Valve, Arch Linux, or
-CachyOS product. Each result is tied to the tested setup described here. The
-[engineering reference](ENGINEERING.md) keeps the deeper evidence, open tests,
-and upstream notes out of the beginner path. These local workarounds should go
-away as official fixes become available.
+This is an unofficial, experimental project. It is not an MSI, Valve, Arch
+Linux, or CachyOS product. Results apply to the tested setup described here,
+and local workarounds should disappear as official fixes become available.
+
+For test evidence and upstream notes, see [ENGINEERING.md](ENGINEERING.md).
 
 ## Compatibility
 
-| Target | Current compatibility | Intended use |
-| --- | --- | --- |
-| MSI Claw 8 EX AI+ CG3EM / MS-1T91 | Exact supported hardware; fixes are DMI-gated and live-tested | Device bring-up and continued validation |
-| CachyOS | Verified reference environment on the kernel listed below | Current experimental installation path and primary validation baseline |
-| Arch Linux | Compatible design target using standard `PKGBUILD`, Pacman, and DKMS tooling; a complete vanilla-Arch pass is not yet recorded | Testing with headers that exactly match the running kernel, plus feedback suitable for proper distribution integration |
-| SteamOS | Engineering and upstream reference target; these local packages are not presented as a supported SteamOS overlay | Inform native kernel and SteamOS Manager support, then use the official implementation when released |
-| Other Arch-derived distributions | Unverified and best-effort | Evaluation only with matching kernel headers |
-| Claw 8 AI+ A2VM/non-EX or other devices | Unsupported | Do not install these hardware-specific fixes |
+- **Tested hardware:** MSI Claw 8 EX AI+ CG3EM / MS-1T91.
+- **Tested system:** [CachyOS Handheld
+  Edition](https://wiki.cachyos.org/installation/installation_handheld/) with
+  KDE Plasma.
+- **Arch Linux:** The packages use standard Pacman, `PKGBUILD`, and DKMS tools,
+  but a complete vanilla Arch test is still pending.
+- **SteamOS:** Use this work as a reference, not as a supported SteamOS overlay.
+- **Other Arch-based systems:** Best effort; not tested.
+- **Other Claw models:** Unsupported.
 
 ## Start here
 
-My current tested baseline is:
+Follow the **[getting-started guide](GETTING_STARTED.md)**. It checks the exact
+device, installs the fixes in a safe order, verifies each component, and
+includes update and removal steps.
 
-- the latest [CachyOS Handheld
-  Edition](https://wiki.cachyos.org/installation/installation_handheld/) with
-  KDE Plasma;
-- `linux-cachyos-deckify` kept as a fallback, with
-  `7.2.0-rc7-1-cachyos-rc` and matching headers currently running; and
-- matching 64-bit and 32-bit Mesa/Intel Vulkan `26.2.0` packages. Mesa loads
-  automatically and is optional compatibility software, not a hardware fix.
-  Prefer current distribution packages when they provide the same or a newer
-  release.
+My current software baseline is:
 
-After a graphics update, reboot or use **Return to Gaming Mode**
-(`steamos-session-select gamescope`). I use `fred=off` for a Wine/game issue;
-it is not needed for the hardware fixes.
+- `7.2.0-rc7-1-cachyos-rc` with matching headers;
+- `linux-cachyos-deckify` kept as a fallback; and
+- matching 64-bit and 32-bit Mesa/Intel Vulkan `26.2.0` packages.
 
-For a first installation, follow the
-**[complete getting-started guide](GETTING_STARTED.md)**. It confirms the exact
-hardware, selects matching kernel headers, installs the fixes in a safe order,
-uses one reboot, verifies every component, and provides update and rollback
-steps.
+Mesa is an optional software compatibility update, not a hardware fix. Prefer
+current distribution packages and keep the 64-bit and 32-bit versions matched.
+Mesa loads automatically. After updating it, reboot or use **Return to Gaming
+Mode** (`steamos-session-select gamescope`).
 
-This repository does not install an operating system, select a kernel, modify a
-bootloader, or partition storage. Other Arch-family kernels require their own
-matching headers.
+I use `fred=off` for a Dark Souls III Wine/Proton issue. It is not required for
+the hardware fixes.
 
-## Available fixes
+This repository does not install an operating system, change the bootloader,
+or partition storage.
 
-| Area | Fix | Recommendation | Status |
-| --- | --- | --- | --- |
-| Audio | [RT721 SoundWire power workaround](fixes/audio-rt721/) | Install for normal use | Speakers and microphone working; see the idle-power limitation |
-| Platform | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Install for TDP, profiles, fans, and charge limits | Runtime verified on the exact device |
-| Telemetry | [GameScope/MangoHud telemetry package](fixes/mangohud-telemetry/) | Optional; install for corrected overlay data | Live sensor paths verified; native foreground overlay capture pending |
-| Audio development | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Kernel builders only; alternative to the workaround | Cold boot, runtime PM, and speaker resume verified; clean microphone-resume test pending |
+## Included fixes
 
-The normal-user route is the packaged audio workaround, platform-controls DKMS
-backport, and optional MangoHud package. The experimental RT721 kernel patch is
-an upstream-development path, not an additional package to layer on top.
+For normal use, install the audio and platform-control packages. Add the
+telemetry package if you want corrected performance-overlay data.
 
-## What the fixes provide
+- **[Audio](fixes/audio-rt721/):** Restores the internal speakers and
+  microphone. Both work, with a documented idle-power limitation.
+- **[Platform controls](fixes/platform-controls/):** Exposes TDP limits,
+  performance profiles, fan curves, fan speeds, and the battery charge limit.
+  These interfaces are live-tested on the exact device.
+- **[GameScope/MangoHud telemetry](fixes/mangohud-telemetry/):** Corrects
+  battery draw, CPU/GPU power, shared-memory VRAM, fan speeds, and CPU/GPU
+  temperatures. The sensor paths are live-tested; a foreground overlay capture
+  is still pending.
+- **[Experimental RT721 kernel patch](patches/rt721-power-management/):** A
+  development alternative to the packaged audio workaround. Do not install
+  both. Speaker resume works; a clean microphone-resume test is still pending.
 
-- Internal speaker and microphone power sequencing for the RT721 SoundWire
-  codec.
-- MSI firmware interfaces for the `custom` performance profile, PL1/SPL
-  8–35 W, PL2/SPPT 9–45 W, both fan curves, fan tachometers, and the battery
-  charge threshold.
-- Corrected GameScope battery discharge watts and remaining time, Intel CPU
-  package and GPU uncore power, and focused-game Xe shared-memory residency in
-  the VRAM row.
-- Both MSI WMI fan tachometers, CPU package temperature, and Intel PMT's
-  documented Panther Lake graphics temperature in the detailed overlay.
+Linux `intel_pstate` still manages CPU scaling and boost. Intel Xe clock control
+needs compatible SteamOS Manager support. GPU utilization shows the focused
+game's Xe activity, not whole-system GPU use.
 
-CPU scaling and boost remain the kernel's `intel_pstate` responsibility. Intel
-Xe clock control remains a SteamOS Manager function. GPU utilization remains a
-focused-game, per-client Xe metric rather than whole-system utilization.
+## Scope and license
 
-## Project layout
+The repository contains Linux source code and configuration. It does not
+include Windows or Realtek binaries, decoded vendor data, firmware, or
+recordings. Hardware-specific changes are gated to the exact EX model.
 
-- [`GETTING_STARTED.md`](GETTING_STARTED.md) — end-to-end install, validation,
-  maintenance, troubleshooting, and removal
-- [`ENGINEERING.md`](ENGINEERING.md) — formal problem statements, solution
-  records, evidence, upstream provenance, and contribution criteria
-- [`fixes/audio-rt721/`](fixes/audio-rt721/) — packaged temporary audio
-  workaround and technical notes
-- [`fixes/platform-controls/`](fixes/platform-controls/) — SteamOS
-  `msi-wmi-platform` backport and read-only status helper
-- [`fixes/mangohud-telemetry/`](fixes/mangohud-telemetry/) — patched MangoHud
-  package and telemetry status helper
-- [`patches/rt721-power-management/`](patches/rt721-power-management/) —
-  experimental kernel-driver integration
-
-Engineers evaluating or upstreaming a change should begin with the
-[engineering reference](ENGINEERING.md), which assigns stable identifiers to
-each solution and separates observed evidence, implementation claims, open
-tests, and retirement conditions.
-
-## Scope
-
-This repository contains source code and configuration written for Linux. It
-does not contain Windows or Realtek driver binaries, decoded vendor data,
-firmware, or recordings. All hardware-specific changes are gated on the exact
-EX model identifiers.
-
-## License
-
-GPL-2.0-only, except the MangoHud-derived telemetry fix, which retains
-MangoHud's MIT license. See [LICENSE](LICENSE) and
-[fixes/mangohud-telemetry/LICENSE](fixes/mangohud-telemetry/LICENSE).
+The project is GPL-2.0-only except for the MangoHud-derived work, which retains
+MangoHud's MIT license. See [LICENSE](LICENSE) and the [MangoHud
+license](fixes/mangohud-telemetry/LICENSE).
