@@ -13,6 +13,7 @@ CG3EM**, board **MS-1T91**.
 | --- | --- | --- |
 | Audio | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Cold boot, runtime PM, and speaker resume verified |
 | Audio | [Realtek RT721 SoundWire power workaround](fixes/audio-rt721/) | Working fallback; leaves hidden D0 gates enabled |
+| Power | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Runtime verified on CachyOS 7.2-rc7 |
 
 The audio workaround is DMI-gated and refuses to run unless both the product
 and board identifiers match the EX model. It is intended as a temporary bridge
@@ -45,6 +46,12 @@ Kernel builders can instead test the
 [in-driver power-management patch](patches/rt721-power-management/). It is
 based on Linux `v7.2-rc7`, whose RT721 source matches CachyOS
 `7.2.0-rc7-1-cachyos-rc`.
+
+The [platform-controls DKMS package](fixes/platform-controls/) backports
+Valve's pending exact-device support for TDP and performance profiles, both fan
+curves, and the battery charge threshold. CPU scaling and Intel Xe GPU clocks
+are already exposed by the kernel and SteamOS Manager; the backport supplies
+the missing MSI firmware interfaces that tie the remaining controls together.
 
 ## Scope
 

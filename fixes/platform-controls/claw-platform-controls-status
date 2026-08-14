@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -u
+
+expected_product='Claw 8 EX AI+ CG3EM'
+expected_board='MS-1T91'
+problems=0
+
+product=$(< /sys/class/dmi/id/product_name)
+board=$(< /sys/class/dmi/id/board_name)
+printf 'Device: %s (%s)\n' "$product" "$board"
+
+if [[ $product != "$expected_product" || $board != "$expected_board" ]]; then
+	printf 'ERROR: this package is intended for %s (%s).\n' \
+		"$expected_product" "$expected_board" >&2
+	exit 1
+fi
+
+module_path=$(modinfo -n msi_wmi_platform 2>/dev/null || true)
+printf 'Module: %s\n' "${module_path:-not found}"
+if [[ $module_path != */updates/dkms/* ]]; then
+	printf 'ERROR: the DKMS override is not selected; install it and reboot.\n' >&2
+	problems=1
+fi
+
+profile_dir=
+for candidate in /sys/class/platform-profile/platform-profile-*; do
+	[[ -r $candidate/name ]] || continue
+	[[ $(< "$candidate/name") == msi-wmi-platform ]] || continue
+	profile_dir=$candidate
+	break
+done
+
+if [[ -n $profile_dir && -r $profile_dir/choices && -r $profile_dir/profile ]]; then
+	printf 'Profiles: %s (current: %s)\n' \
+		"$(< "$profile_dir/choices")" "$(< "$profile_dir/profile")"
+	if [[ " $(< "$profile_dir/choices") " != *' custom '* ]]; then
+		printf 'ERROR: the EX-specific custom profile is missing.\n' >&2
+		problems=1
+	fi
+else
+	printf 'ERROR: MSI platform-profile interface is missing.\n' >&2
+	problems=1
+fi
+
+attributes_dir=/sys/class/firmware-attributes/msi-wmi-platform/attributes
+for attribute in ppt_pl1_spl ppt_pl2_sppt; do
+	attribute_dir=$attributes_dir/$attribute
+	if [[ -r $attribute_dir/current_value && -r $attribute_dir/min_value && \
+	      -r $attribute_dir/max_value ]]; then
+		printf '%s: %s W (range %s–%s W)\n' "$attribute" \
+			"$(< "$attribute_dir/current_value")" \
+			"$(< "$attribute_dir/min_value")" \
+			"$(< "$attribute_dir/max_value")"
+	else
+		printf 'ERROR: firmware attribute %s is missing.\n' "$attribute" >&2
+		problems=1
+	fi
+done
+
+hwmon_found=0
+for hwmon_dir in /sys/class/hwmon/hwmon*; do
+	[[ -r $hwmon_dir/name ]] || continue
+	[[ $(< "$hwmon_dir/name") == msi_wmi_platform ]] || continue
+	hwmon_found=1
+	printf 'Hwmon: %s\n' "$hwmon_dir"
+	for fan_input in "$hwmon_dir"/fan*_input; do
+		[[ -r $fan_input ]] || continue
+		printf '  %s: %s RPM\n' "${fan_input##*/}" "$(< "$fan_input")"
+	done
+	printf '  Fan modes:'
+	for pwm_enable in "$hwmon_dir"/pwm*_enable; do
+		[[ -r $pwm_enable ]] || continue
+		printf ' %s=%s' "${pwm_enable##*/}" "$(< "$pwm_enable")"
+	done
+	printf '\n'
+done
+if (( ! hwmon_found )); then
+	printf 'ERROR: MSI hwmon fan interface is missing.\n' >&2
+	problems=1
+fi
+
+if command -v steamosctl >/dev/null; then
+	printf '\nSteamOS Manager controls:\n'
+	steamosctl get-all-properties 2>/dev/null |
+		grep -E 'CpuScaling|GpuPerformanceLevel|ManualGpuClock|PerformanceProfile|TdpLimit' || true
+fi
+
+if (( problems )); then
+	printf '\nOne or more required interfaces are not ready.\n' >&2
+	exit 1
+fi
+
+printf '\nCore platform-control interfaces are ready.\n'
