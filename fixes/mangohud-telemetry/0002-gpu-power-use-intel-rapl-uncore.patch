@@ -1,0 +1,151 @@
+From: Steven Lamb <100538383+stevedamnvan@users.noreply.github.com>
+Date: Thu, 13 Aug 2026 23:01:00 -0400
+Subject: [PATCH 2/2] gpu_fdinfo: use Intel RAPL uncore power fallback
+
+Integrated Intel Xe GPUs do not expose the discrete-GPU hwmon energy
+sensor.  Use the RAPL uncore energy counter when no DRM hwmon power
+source is available.  This is a v0.8.4 backport of the approach in
+MangoHud PR #2080, which was tested on an MSI Claw 8 AI+ under SteamOS.
+---
+ src/gpu_fdinfo.cpp | 78 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/gpu_fdinfo.h   | 17 +++++++++++
+ 2 files changed, 95 insertions(+)
+
+diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
+index 0fdd99e..ad7d6b0 100644
+--- a/src/gpu_fdinfo.cpp
++++ b/src/gpu_fdinfo.cpp
+@@ -1,4 +1,5 @@
+ #include "gpu_fdinfo.h"
++#include "file_utils.h"
+
+ #ifndef TEST_ONLY
+ #include "hud_elements.h"
+@@ -305,6 +306,9 @@ void GPU_fdinfo::get_current_hwmon_readings()
+
+ float GPU_fdinfo::get_power_usage()
+ {
++    if (intel_gpu_rapl_energy_stream.is_open())
++        return get_intel_gpu_rapl_power_usage();
++
+     if (!hwmon_sensors["power"].filename.empty())
+         return static_cast<float>(hwmon_sensors["power"].val) / 1'000'000;
+
+@@ -323,6 +327,80 @@ float GPU_fdinfo::get_power_usage()
+     return delta / 1'000'000;
+ }
+
++void GPU_fdinfo::find_intel_gpu_rapl_power()
++{
++    const std::string powercap = "/sys/class/powercap/";
++
++    for (const auto& dir : ls(powercap.c_str())) {
++        const auto path = powercap + dir;
++
++        if (read_line(path + "/name") != "uncore")
++            continue;
++
++        auto energy_stream = std::ifstream(path + "/energy_uj");
++        if (!energy_stream.good())
++            continue;
++
++        intel_gpu_rapl_energy_stream = std::move(energy_stream);
++
++        try {
++            const auto max_energy = read_line(path + "/max_energy_range_uj");
++            if (!max_energy.empty())
++                intel_gpu_rapl_max_energy_range_uj = std::stoull(max_energy);
++        } catch (...) {
++            intel_gpu_rapl_max_energy_range_uj = 0;
++        }
++
++        SPDLOG_DEBUG("powercap: using Intel GPU RAPL energy at {}/energy_uj", path);
++        return;
++    }
++}
++
++bool GPU_fdinfo::read_intel_gpu_rapl_energy(uint64_t& energy_uj)
++{
++    intel_gpu_rapl_energy_stream.clear();
++    intel_gpu_rapl_energy_stream.seekg(0);
++
++    std::string energy;
++    std::getline(intel_gpu_rapl_energy_stream, energy);
++    if (energy.empty())
++        return false;
++
++    try {
++        energy_uj = std::stoull(energy);
++    } catch (...) {
++        return false;
++    }
++
++    return true;
++}
++
++float GPU_fdinfo::get_intel_gpu_rapl_power_usage()
++{
++    uint64_t now = 0;
++    if (!read_intel_gpu_rapl_energy(now))
++        return 0.0f;
++
++    if (!intel_gpu_rapl_energy_initialized) {
++        intel_gpu_rapl_last_energy_uj = now;
++        intel_gpu_rapl_energy_initialized = true;
++        return 0.0f;
++    }
++
++    uint64_t delta = 0;
++    if (now >= intel_gpu_rapl_last_energy_uj) {
++        delta = now - intel_gpu_rapl_last_energy_uj;
++    } else if (intel_gpu_rapl_max_energy_range_uj > intel_gpu_rapl_last_energy_uj) {
++        delta = intel_gpu_rapl_max_energy_range_uj -
++                intel_gpu_rapl_last_energy_uj + now;
++    }
++
++    intel_gpu_rapl_last_energy_uj = now;
++
++    return (static_cast<float>(delta) /
++            (METRICS_UPDATE_PERIOD_MS / 1000.0f)) / 1'000'000.0f;
++}
++
+ int GPU_fdinfo::get_xe_load()
+ {
+     double load = 0;
+diff --git a/src/gpu_fdinfo.h b/src/gpu_fdinfo.h
+index 97e62e5..e4c799b 100644
+--- a/src/gpu_fdinfo.h
++++ b/src/gpu_fdinfo.h
+@@ -90,6 +90,13 @@ private:
+
+     float get_power_usage();
+     float last_power = 0;
++    std::ifstream intel_gpu_rapl_energy_stream;
++    uint64_t intel_gpu_rapl_last_energy_uj = 0;
++    uint64_t intel_gpu_rapl_max_energy_range_uj = 0;
++    bool intel_gpu_rapl_energy_initialized = false;
++    void find_intel_gpu_rapl_power();
++    bool read_intel_gpu_rapl_energy(uint64_t& energy_uj);
++    float get_intel_gpu_rapl_power_usage();
+
+     std::ifstream gpu_clock_stream;
+     void find_i915_gt_dir();
+@@ -208,6 +215,16 @@ public:
+
+         find_hwmon_sensors();
+
++        const bool intel_gpu_integrated =
++            (module == "i915" && drm_memory_type == "drm-resident-system0") ||
++            (module == "xe" && drm_memory_type == "drm-resident-gtt");
++
++        if (intel_gpu_integrated &&
++            hwmon_sensors["energy"].filename.empty() &&
++            hwmon_sensors["power"].filename.empty()) {
++            find_intel_gpu_rapl_power();
++        }
++
+         if (module == "i915")
+             find_i915_gt_dir();
+         else if (module == "xe")
+--
+2.55.0

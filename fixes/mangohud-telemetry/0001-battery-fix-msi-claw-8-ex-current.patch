@@ -1,0 +1,100 @@
+From: Steven Lamb <100538383+stevedamnvan@users.noreply.github.com>
+Date: Thu, 13 Aug 2026 23:00:00 -0400
+Subject: [PATCH 1/2] battery: decode MSI Claw 8 EX discharge current
+
+The MS-1T91 firmware exposes a wrapped 16-bit milliamps value as a large
+negative current while discharging.  Decode it only on the exact system,
+and use the corrected value for both watts and remaining-time estimates.
+---
+ src/battery.cpp | 57 ++++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 55 insertions(+), 2 deletions(-)
+
+diff --git a/src/battery.cpp b/src/battery.cpp
+index 1612bff..f65da6a 100644
+--- a/src/battery.cpp
++++ b/src/battery.cpp
+@@ -5,6 +5,51 @@
+ namespace fs = ghc::filesystem;
+ using namespace std;
+
++namespace {
++
++constexpr float claw_current_wrap_ua = 65'536'000.0f;
++constexpr float claw_current_wrap_threshold_ua = 32'768'000.0f;
++
++bool dmi_value_matches(const char* path, const char* expected)
++{
++    std::ifstream input(path);
++    std::string value;
++
++    return std::getline(input, value) && value == expected;
++}
++
++bool is_msi_claw_8_ex()
++{
++    static const bool matches =
++        dmi_value_matches("/sys/class/dmi/id/sys_vendor",
++                          "Micro-Star International Co., Ltd.") &&
++        dmi_value_matches("/sys/class/dmi/id/product_name",
++                          "Claw 8 EX AI+ CG3EM") &&
++        dmi_value_matches("/sys/class/dmi/id/board_name", "MS-1T91");
++
++    return matches;
++}
++
++float normalize_current_now(float current_ua, const std::string& status)
++{
++    /*
++     * MS-1T91 firmware reports discharging current as a wrapped 16-bit
++     * milliamps value that ACPI exposes as a large negative number. For
++     * example, -62980 mA represents 2556 mA (-62980 + 65536). Keep this
++     * workaround exact-device and discharge-only so normal signed current
++     * values from other batteries are unchanged.
++     */
++    if (is_msi_claw_8_ex() && status == "Discharging" &&
++        current_ua >= -claw_current_wrap_ua &&
++        current_ua <= -claw_current_wrap_threshold_ua) {
++        return current_ua + claw_current_wrap_ua;
++    }
++
++    return current_ua;
++}
++
++} // namespace
++
+ void BatteryStats::numBattery() {
+     int batteryCount = 0;
+     if (!fs::exists("/sys/class/power_supply/")) {
+@@ -129,7 +174,7 @@ float BatteryStats::getPower() {
+                 std::ifstream input(current_now);
+                 std::string line;
+                 if (std::getline(input, line)) {
+-                    i_ua = stof(line);
++                    i_ua = normalize_current_now(stof(line), state[i]);
+                 }
+             }
+             {
+@@ -158,12 +203,20 @@ float BatteryStats::getTimeRemaining() {
+         string energy_now = syspath + "/energy_now";
+         string voltage_now = syspath + "/voltage_now";
+         string power_now = syspath + "/power_now";
++        string status = syspath + "/status";
++
++        std::string battery_status;
++        {
++            std::ifstream input(status);
++            std::getline(input, battery_status);
++        }
+
+         if (fs::exists(current_now)) {
+             std::ifstream input(current_now);
+             std::string line;
+             if (std::getline(input, line)) {
+-                current_now_vec.push_back(std::fabs(stof(line)));
++                current_now_vec.push_back(std::fabs(
++                    normalize_current_now(stof(line), battery_status)));
+             }
+         } else if (fs::exists(power_now) && fs::exists(voltage_now)) {
+             float voltage = 0.0f;
+--
+2.55.0
