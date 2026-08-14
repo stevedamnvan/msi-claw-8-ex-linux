@@ -7,6 +7,40 @@ CG3EM**, board **MS-1T91**.
 > These fixes are hardware-specific. The Claw 8 AI+ A2VM (non-EX) uses a
 > different platform and audio path and is not supported by this repository.
 
+## Project purpose and maturity
+
+This is an **unofficial, experimental device-enablement and engineering
+reference project**. It has two complementary goals:
+
+1. give Claw 8 EX AI+ CG3EM owners a reproducible way to bring up currently
+   missing audio, firmware-control, and performance-overlay support; and
+2. turn the device observations into narrowly scoped, reviewable evidence that
+   can help inform durable fixes in the upstream Linux kernel and ALSA stack,
+   SteamOS Manager, MangoHud, and Arch Linux/CachyOS packaging.
+
+The repository is not an official MSI, Valve, Arch Linux, or CachyOS project,
+and inclusion here does not mean that a fix has been accepted by any of those
+projects. Experimental means that each documented result has a specific tested
+environment and validation boundary; it does not imply production support for
+every kernel or distribution release. See the [engineering
+reference](ENGINEERING.md) for provenance, observed evidence, open tests, and
+the intended upstream or retirement path for each workaround.
+
+Local workarounds are bridges, not permanent forks. They should be removed when
+an official kernel, SteamOS, MangoHud, or distribution package provides an
+equivalent verified fix.
+
+## Compatibility
+
+| Target | Current compatibility | Intended use |
+| --- | --- | --- |
+| MSI Claw 8 EX AI+ CG3EM / MS-1T91 | Exact supported hardware; fixes are DMI-gated and live-tested | Device bring-up and continued validation |
+| CachyOS | Verified reference environment on the kernel listed below | Current experimental installation path and primary validation baseline |
+| Arch Linux | Compatible design target using standard `PKGBUILD`, Pacman, and DKMS tooling; a complete vanilla-Arch pass is not yet recorded | Testing with headers that exactly match the running kernel, plus feedback suitable for proper distribution integration |
+| SteamOS | Engineering and upstream reference target; these local packages are not presented as a supported SteamOS overlay | Inform native kernel and SteamOS Manager support, then use the official implementation when released |
+| Other Arch-derived distributions | Unverified and best-effort | Evaluation only with matching kernel headers |
+| Claw 8 AI+ A2VM/non-EX or other devices | Unsupported | Do not install these hardware-specific fixes |
+
 ## Start here
 
 For a first installation, follow the
