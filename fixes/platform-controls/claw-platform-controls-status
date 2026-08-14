@@ -22,8 +22,15 @@ if [[ $module_path != */updates/dkms/* ]]; then
 	problems=1
 fi
 
-profile_dir=/sys/class/platform-profile/msi-wmi-platform
-if [[ -r $profile_dir/choices && -r $profile_dir/profile ]]; then
+profile_dir=
+for candidate in /sys/class/platform-profile/platform-profile-*; do
+	[[ -r $candidate/name ]] || continue
+	[[ $(< "$candidate/name") == msi-wmi-platform ]] || continue
+	profile_dir=$candidate
+	break
+done
+
+if [[ -n $profile_dir && -r $profile_dir/choices && -r $profile_dir/profile ]]; then
 	printf 'Profiles: %s (current: %s)\n' \
 		"$(< "$profile_dir/choices")" "$(< "$profile_dir/profile")"
 	if [[ " $(< "$profile_dir/choices") " != *' custom '* ]]; then

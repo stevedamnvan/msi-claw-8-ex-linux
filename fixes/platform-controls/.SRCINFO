@@ -1,7 +1,7 @@
 pkgbase = claw-msi-wmi-platform-dkms
 	pkgdesc = SteamOS MSI WMI TDP, profile, fan, and charge controls for MSI Claw 8 EX AI+
 	pkgver = 0.1.1
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/stevedamnvan/msi-claw-8-ex-linux
 	install = claw-msi-wmi-platform.install
 	arch = x86_64
@@ -22,7 +22,7 @@ pkgbase = claw-msi-wmi-platform-dkms
 	sha256sums = 1b12e8397c0f0b0eb48e8fada57a38b0bc8c795fc2f608cc040d54d373650672
 	sha256sums = b6cc64af7495d7b44cf4b7c66048eadeec73246fff20c4e983937a58cc7f96a0
 	sha256sums = a6f599ae82aa5461f38b088b2aad593090a8cf61090b8f02208296a7face4c40
-	sha256sums = 3ec6d23cd0d0986a0635f0427ce8c22b7df9cecce8f286dfee45bea5c28b7798
+	sha256sums = 028d595c378e96089e28c0805beb0235e2b336da7b96e1aaa0334e5c6affc339
 	sha256sums = 78a4dcf40d2952aa068564683cb965421a082798c5348e3a47d6d932383d1a2c
 
 pkgname = claw-msi-wmi-platform-dkms
