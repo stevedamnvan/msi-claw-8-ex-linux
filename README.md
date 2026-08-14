@@ -1,34 +1,24 @@
 # MSI Claw 8 EX AI+ Linux fixes
 
-Experimental Arch Linux and CachyOS fixes for the **MSI Claw 8 EX AI+
+My experimental Arch Linux and CachyOS fixes for the **MSI Claw 8 EX AI+
 CG3EM**, board **MS-1T91**.
 
 > [!WARNING]
 > These fixes are hardware-specific. The Claw 8 AI+ A2VM (non-EX) uses a
 > different platform and audio path and is not supported by this repository.
 
-## Project purpose and maturity
+## About this project
 
-This is an **unofficial, experimental device-enablement and engineering
-reference project**. It has two complementary goals:
+This repository documents my journey getting Linux working well on the Claw 8
+EX. I am sharing what worked for me so other owners have a practical starting
+point and so Linux, SteamOS, MangoHud, Arch Linux, and CachyOS developers have
+clear evidence that can help shape proper fixes.
 
-1. give Claw 8 EX AI+ CG3EM owners a reproducible way to bring up currently
-   missing audio, firmware-control, and performance-overlay support; and
-2. turn the device observations into narrowly scoped, reviewable evidence that
-   can help inform durable fixes in the upstream Linux kernel and ALSA stack,
-   SteamOS Manager, MangoHud, and Arch Linux/CachyOS packaging.
-
-The repository is not an official MSI, Valve, Arch Linux, or CachyOS project,
-and inclusion here does not mean that a fix has been accepted by any of those
-projects. Experimental means that each documented result has a specific tested
-environment and validation boundary; it does not imply production support for
-every kernel or distribution release. See the [engineering
-reference](ENGINEERING.md) for provenance, observed evidence, open tests, and
-the intended upstream or retirement path for each workaround.
-
-Local workarounds are bridges, not permanent forks. They should be removed when
-an official kernel, SteamOS, MangoHud, or distribution package provides an
-equivalent verified fix.
+This is an unofficial, experimental project, not an MSI, Valve, Arch Linux, or
+CachyOS product. Each result is tied to the tested setup described here. The
+[engineering reference](ENGINEERING.md) keeps the deeper evidence, open tests,
+and upstream notes out of the beginner path. These local workarounds should go
+away as official fixes become available.
 
 ## Compatibility
 
@@ -43,6 +33,22 @@ equivalent verified fix.
 
 ## Start here
 
+My current tested baseline is:
+
+- the latest [CachyOS Handheld
+  Edition](https://wiki.cachyos.org/installation/installation_handheld/) with
+  KDE Plasma;
+- `linux-cachyos-deckify` kept as a fallback, with
+  `7.2.0-rc7-1-cachyos-rc` and matching headers currently running; and
+- matching 64-bit and 32-bit Mesa/Intel Vulkan `26.2.0` packages. Mesa loads
+  automatically and is optional compatibility software, not a hardware fix.
+  Prefer current distribution packages when they provide the same or a newer
+  release.
+
+After a graphics update, reboot or use **Return to Gaming Mode**
+(`steamos-session-select gamescope`). I use `fred=off` for a Wine/game issue;
+it is not needed for the hardware fixes.
+
 For a first installation, follow the
 **[complete getting-started guide](GETTING_STARTED.md)**. It confirms the exact
 hardware, selects matching kernel headers, installs the fixes in a safe order,
@@ -50,8 +56,7 @@ uses one reboot, verifies every component, and provides update and rollback
 steps.
 
 This repository does not install an operating system, select a kernel, modify a
-bootloader, or partition storage. The packages have been tested on CachyOS with
-kernel `7.2.0-rc7-1-cachyos-rc`; other Arch-family kernels require their own
+bootloader, or partition storage. Other Arch-family kernels require their own
 matching headers.
 
 ## Available fixes
