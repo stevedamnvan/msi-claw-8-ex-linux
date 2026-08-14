@@ -26,7 +26,7 @@ matching headers.
 | --- | --- | --- | --- |
 | Audio | [RT721 SoundWire power workaround](fixes/audio-rt721/) | Install for normal use | Speakers and microphone working; see the idle-power limitation |
 | Platform | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Install for TDP, profiles, fans, and charge limits | Runtime verified on the exact device |
-| Telemetry | [GameScope/MangoHud telemetry package](fixes/mangohud-telemetry/) | Optional; install for corrected overlay data | Local paths verified; native foreground overlay capture pending |
+| Telemetry | [GameScope/MangoHud telemetry package](fixes/mangohud-telemetry/) | Optional; install for corrected overlay data | Live sensor paths verified; native foreground overlay capture pending |
 | Audio development | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Kernel builders only; alternative to the workaround | Cold boot, runtime PM, and speaker resume verified; clean microphone-resume test pending |
 
 The normal-user route is the packaged audio workaround, platform-controls DKMS
@@ -43,6 +43,8 @@ an upstream-development path, not an additional package to layer on top.
 - Corrected GameScope battery discharge watts and remaining time, Intel CPU
   package and GPU uncore power, and focused-game Xe shared-memory residency in
   the VRAM row.
+- Both MSI WMI fan tachometers, CPU package temperature, and Intel PMT's
+  documented Panther Lake graphics temperature in the detailed overlay.
 
 CPU scaling and boost remain the kernel's `intel_pstate` responsibility. Intel
 Xe clock control remains a SteamOS Manager function. GPU utilization remains a

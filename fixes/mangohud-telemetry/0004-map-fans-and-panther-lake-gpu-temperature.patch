@@ -1,0 +1,262 @@
+From 3fcb28463fc06e282add09f41ce7cafff911716c Mon Sep 17 00:00:00 2001
+From: Steven Lamb <100538383+stevedamnvan@users.noreply.github.com>
+Date: Fri, 14 Aug 2026 10:30:00 -0400
+Subject: [PATCH 4/4] telemetry: map Claw fans and Panther Lake GPU temp
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Read both MSI WMI tachometers through MangoHud’s system-fan row and enable that row in the extended GameScope preset. Keep Steam Deck fan behavior intact.
+
+Integrated Xe has no DRM hwmon temperature node on Panther Lake. On the exact MS-1T91 device, use GT_MAX byte 127 from Intel PMT normal telemetry GUID 0x03086000 when the standard hwmon source is absent. The offset and signed 8-bit Celsius encoding come from Intel’s public PTL telemetry schema.
+---
+ src/gpu_fdinfo.cpp     | 83 +++++++++++++++++++++++++++++++++++++++++-
+ src/gpu_fdinfo.h       |  9 +++++
+ src/hud_elements.cpp   | 10 ++++-
+ src/overlay.cpp        | 36 +++++++++++++-----
+ src/overlay.h          |  1 +
+ src/overlay_params.cpp |  1 +
+ 6 files changed, 128 insertions(+), 12 deletions(-)
+
+diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
+index a56123c..371700d 100644
+--- a/src/gpu_fdinfo.cpp
++++ b/src/gpu_fdinfo.cpp
+@@ -401,6 +401,84 @@ float GPU_fdinfo::get_intel_gpu_rapl_power_usage()
+             (METRICS_UPDATE_PERIOD_MS / 1000.0f)) / 1'000'000.0f;
+ }
+
++void GPU_fdinfo::find_intel_pmt_gpu_temp()
++{
++    constexpr uint64_t ptl_normal_guid = 0x03086000;
++    constexpr uint64_t gt_max_end_offset = 127;
++    const std::string pmt_class = "/sys/class/intel_pmt";
++
++    if (read_line("/sys/class/dmi/id/sys_vendor") !=
++            "Micro-Star International Co., Ltd." ||
++        read_line("/sys/class/dmi/id/product_name") !=
++            "Claw 8 EX AI+ CG3EM" ||
++        read_line("/sys/class/dmi/id/board_name") != "MS-1T91") {
++        return;
++    }
++
++    try {
++        if (!fs::exists(pmt_class))
++            return;
++
++        for (const auto& entry : fs::directory_iterator(pmt_class)) {
++            const auto endpoint = entry.path().string();
++            const auto filename = entry.path().filename().string();
++            if (filename.rfind("telem", 0) != 0)
++                continue;
++
++            uint64_t guid = 0;
++            uint64_t size = 0;
++            try {
++                guid = std::stoull(read_line(endpoint + "/guid"), nullptr, 0);
++                size = std::stoull(read_line(endpoint + "/size"), nullptr, 0);
++            } catch (...) {
++                continue;
++            }
++
++            if (guid != ptl_normal_guid || size <= gt_max_end_offset)
++                continue;
++
++            auto stream = std::ifstream(endpoint + "/telem",
++                                        std::ios::in | std::ios::binary);
++            if (!stream.good()) {
++                SPDLOG_WARN(
++                    "intel_pmt: Panther Lake GPU temperature at {}/telem is "
++                    "not readable; enable claw-mangohud-rapl-access.service",
++                    endpoint
++                );
++                continue;
++            }
++
++            intel_pmt_gpu_temp_stream = std::move(stream);
++            intel_pmt_gpu_temp_path = endpoint + "/telem";
++            SPDLOG_DEBUG(
++                "intel_pmt: using Panther Lake GT_MAX temperature at byte {} of {}",
++                gt_max_end_offset, intel_pmt_gpu_temp_path
++            );
++            return;
++        }
++    } catch (const fs::filesystem_error& ex) {
++        SPDLOG_WARN("intel_pmt: failed to discover GPU temperature: {}", ex.what());
++    }
++}
++
++int GPU_fdinfo::get_intel_pmt_gpu_temp()
++{
++    constexpr std::streamoff gt_max_end_offset = 127;
++
++    if (!intel_pmt_gpu_temp_stream.is_open())
++        return 0;
++
++    char raw_temp = 0;
++    intel_pmt_gpu_temp_stream.clear();
++    intel_pmt_gpu_temp_stream.seekg(gt_max_end_offset, std::ios::beg);
++    intel_pmt_gpu_temp_stream.read(&raw_temp, sizeof(raw_temp));
++    if (intel_pmt_gpu_temp_stream.gcount() != sizeof(raw_temp))
++        return 0;
++
++    const int temp = static_cast<int>(static_cast<int8_t>(raw_temp));
++    return temp > 0 && temp < 125 ? temp : 0;
++}
++
+ int GPU_fdinfo::get_xe_load()
+ {
+     double load = 0;
+@@ -820,8 +898,11 @@ void GPU_fdinfo::main_thread()
+
+         if (module == "msm_drm")
+             metrics.temp = get_kgsl_temp();
+-        else
++        else {
+             metrics.temp = hwmon_sensors["temp"].val / 1000.f;
++            if (metrics.temp <= 0.0f && module == "xe")
++                metrics.temp = get_intel_pmt_gpu_temp();
++        }
+
+         metrics.memory_temp = hwmon_sensors["vram_temp"].val / 1000.f;
+
+diff --git a/src/gpu_fdinfo.h b/src/gpu_fdinfo.h
+index bbb9a67..825ee00 100644
+--- a/src/gpu_fdinfo.h
++++ b/src/gpu_fdinfo.h
+@@ -98,6 +98,10 @@ private:
+     void find_intel_gpu_rapl_power();
+     bool read_intel_gpu_rapl_energy(uint64_t& energy_uj);
+     float get_intel_gpu_rapl_power_usage();
++    std::ifstream intel_pmt_gpu_temp_stream;
++    std::string intel_pmt_gpu_temp_path;
++    void find_intel_pmt_gpu_temp();
++    int get_intel_pmt_gpu_temp();
+
+     std::ifstream gpu_clock_stream;
+     void find_i915_gt_dir();
+@@ -226,6 +230,11 @@ public:
+             find_intel_gpu_rapl_power();
+         }
+
++        if (intel_gpu_integrated && module == "xe" &&
++            hwmon_sensors["temp"].filename.empty()) {
++            find_intel_pmt_gpu_temp();
++        }
++
+         if (module == "i915")
+             find_i915_gt_dir();
+         else if (module == "xe")
+diff --git a/src/hud_elements.cpp b/src/hud_elements.cpp
+index 8083591..977c2db 100644
+--- a/src/hud_elements.cpp
++++ b/src/hud_elements.cpp
+@@ -1458,9 +1458,15 @@ void HudElements::frame_count(){
+ void HudElements::fan(){
+     if (HUDElements.params->enabled[OVERLAY_PARAM_ENABLED_fan] && fan_speed != -1) {
+         ImguiNextColumnFirstItem();
+-        HUDElements.TextColored(HUDElements.colors.engine, "%s", "FAN");
++        HUDElements.TextColored(HUDElements.colors.engine, "%s",
++            fan_speed_secondary == -1 ? "FAN" : "FAN 1/2");
+         ImguiNextColumnOrNewRow();
+-        right_aligned_text(HUDElements.colors.text,HUDElements.ralign_width, "%i", fan_speed);
++        if (fan_speed_secondary == -1)
++            right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width,
++                "%i", fan_speed);
++        else
++            right_aligned_text(HUDElements.colors.text, HUDElements.ralign_width,
++                "%i/%i", fan_speed, fan_speed_secondary);
+         ImGui::SameLine(0, 1.0f);
+         ImGui::PushFont(HUDElements.sw_stats->font_small);
+         HUDElements.TextColored(HUDElements.colors.text, "RPM");
+diff --git a/src/overlay.cpp b/src/overlay.cpp
+index 2196953..6ebb85a 100644
+--- a/src/overlay.cpp
++++ b/src/overlay.cpp
+@@ -50,6 +50,7 @@ bool gpu_metrics_exists = false;
+ bool steam_focused = false;
+ vector<float> frametime_data(200,0.f);
+ int fan_speed;
++int fan_speed_secondary;
+ fcatoverlay fcatstatus;
+ std::string drm_dev;
+ int current_preset;
+@@ -883,26 +884,43 @@ void check_for_vkbasalt_and_gamemode() {
+ }
+
+ void update_fan(){
+-   // This just handles steam deck fan for now
+-   static bool init;
+-   string hwmon_path;
++   static bool init = false;
++   static string hwmon_path;
++   static string hwmon_path_secondary;
+
+    if (!init){
+       string path = "/sys/class/hwmon/";
+       auto dirs = ls(path.c_str(), "hwmon", LS_DIRS);
+       for (auto& dir : dirs) {
+-         string full_path = (path + dir + "/name").c_str();
+-         if (read_line(full_path).find("steamdeck_hwmon") != string::npos){
++         const string full_path = path + dir + "/name";
++         const string hwmon_name = read_line(full_path);
++         if (hwmon_name.find("steamdeck_hwmon") != string::npos){
+             hwmon_path = path + dir + "/fan1_input";
+             break;
+          }
++         if (hwmon_name == "msi_wmi_platform") {
++            hwmon_path = path + dir + "/fan1_input";
++            hwmon_path_secondary = path + dir + "/fan2_input";
++            break;
++         }
+       }
++      init = true;
+    }
+
+-   if (!hwmon_path.empty())
+-      fan_speed = stoi(read_line(hwmon_path));
+-   else
+-      fan_speed = -1;
++   const auto read_fan_speed = [](const string& path) {
++      if (path.empty())
++         return -1;
++
++      try {
++         const auto value = read_line(path);
++         return value.empty() ? -1 : stoi(value);
++      } catch (...) {
++         return -1;
++      }
++   };
++
++   fan_speed = read_fan_speed(hwmon_path);
++   fan_speed_secondary = read_fan_speed(hwmon_path_secondary);
+ }
+
+ void next_hud_position(){
+diff --git a/src/overlay.h b/src/overlay.h
+index a5993aa..fdbf5f6 100644
+--- a/src/overlay.h
++++ b/src/overlay.h
+@@ -144,6 +144,7 @@ extern std::deque<logData> graph_data;
+ extern double min_frametime, max_frametime;
+ extern bool steam_focused;
+ extern int fan_speed;
++extern int fan_speed_secondary;
+ extern int current_preset;
+ extern std::vector<float> frametime_data;
+
+diff --git a/src/overlay_params.cpp b/src/overlay_params.cpp
+index b10a0ce..af0e7bf 100644
+--- a/src/overlay_params.cpp
++++ b/src/overlay_params.cpp
+@@ -1335,6 +1335,7 @@ void presets(int preset, struct overlay_params *params, bool inherit) {
+       case 3:
+          add_to_options(params, "cpu_temp", "1");
+          add_to_options(params, "gpu_temp", "1");
++         add_to_options(params, "fan", "1");
+          add_to_options(params, "ram", "1");
+          add_to_options(params, "vram", "1");
+          add_to_options(params, "cpu_power", "1");
+--
+2.55.0

@@ -97,5 +97,82 @@ sample_rapl_power()
 sample_rapl_power package-0 'CPU package power'
 sample_rapl_power uncore 'GPU uncore power'
 
+find_hwmon()
+{
+	local wanted=$1
+	local hwmon
+
+	for hwmon in /sys/class/hwmon/hwmon*; do
+		[[ -d $hwmon ]] || continue
+		if [[ $(read_value "$hwmon/name") == "$wanted" ]]; then
+			printf '%s' "$hwmon"
+			return
+		fi
+	done
+}
+
+msi_hwmon=$(find_hwmon msi_wmi_platform)
+if [[ -n $msi_hwmon ]]; then
+	fan1=$(read_value "$msi_hwmon/fan1_input")
+	fan2=$(read_value "$msi_hwmon/fan2_input")
+	printf 'Fans: fan1=%s RPM fan2=%s RPM (msi_wmi_platform)\n' \
+		"${fan1:-unavailable}" "${fan2:-unavailable}"
+else
+	printf 'Fans: unavailable (no msi_wmi_platform hwmon device)\n'
+fi
+
+cpu_hwmon=$(find_hwmon coretemp)
+cpu_temp_file=
+if [[ -n $cpu_hwmon ]]; then
+	for label_file in "$cpu_hwmon"/temp*_label; do
+		[[ -e $label_file ]] || continue
+		if [[ $(read_value "$label_file") == 'Package id 0' ]]; then
+			cpu_temp_file=${label_file%_label}_input
+			break
+		fi
+	done
+fi
+
+cpu_temp=$(read_value "$cpu_temp_file")
+if [[ $cpu_temp =~ ^-?[0-9]+$ ]]; then
+	awk -v temp="$cpu_temp" \
+		'BEGIN { printf "CPU temperature: %.1f C (coretemp Package id 0)\n", temp / 1000 }'
+else
+	printf 'CPU temperature: unavailable (no readable coretemp Package id 0)\n'
+fi
+
+pmt_endpoint=
+for endpoint in /sys/class/intel_pmt/telem*; do
+	[[ -d $endpoint ]] || continue
+	guid=$(read_value "$endpoint/guid")
+	[[ $guid == 0x3086000 || $guid == 0x03086000 ]] || continue
+	size=$(read_value "$endpoint/size")
+	[[ $size =~ ^[0-9]+$ && $size -gt 127 ]] || continue
+	pmt_endpoint=$endpoint
+	break
+done
+
+if [[ -z $pmt_endpoint ]]; then
+	printf 'GPU temperature: unavailable (no Panther Lake PMT normal endpoint)\n'
+elif [[ ! -r $pmt_endpoint/telem ]]; then
+	printf 'GPU temperature: unavailable (%s/telem is not readable; enable claw-mangohud-rapl-access.service)\n' \
+		"$pmt_endpoint"
+else
+	raw_gpu_temp=$(od -An -v -tu1 -j 127 -N 1 "$pmt_endpoint/telem")
+	raw_gpu_temp=${raw_gpu_temp//[[:space:]]/}
+	if [[ $raw_gpu_temp =~ ^[0-9]+$ ]]; then
+		if (( raw_gpu_temp > 127 )); then
+			raw_gpu_temp=$((raw_gpu_temp - 256))
+		fi
+	fi
+	if [[ $raw_gpu_temp =~ ^[0-9]+$ && $raw_gpu_temp -gt 0 && $raw_gpu_temp -lt 125 ]]; then
+		printf 'GPU temperature: %s C (Intel PMT GT_MAX, GUID %s, byte 127)\n' \
+			"$raw_gpu_temp" "$(read_value "$pmt_endpoint/guid")"
+	else
+		printf 'GPU temperature: unavailable (invalid PMT GT_MAX sample: %s)\n' \
+			"${raw_gpu_temp:-empty}"
+	fi
+fi
+
 printf 'MangoHud package: '
 pacman -Q mangohud-claw 2>/dev/null || pacman -Q mangohud 2>/dev/null || printf 'not installed\n'

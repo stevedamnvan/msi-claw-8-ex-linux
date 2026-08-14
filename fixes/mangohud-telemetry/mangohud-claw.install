@@ -1,5 +1,5 @@
 post_install() {
-	echo 'Enable Intel CPU/GPU power access with:'
+	echo 'Enable Intel CPU/GPU power and GPU temperature access with:'
 	echo '  systemctl enable --now claw-mangohud-rapl-access.service'
 	echo 'Then restart the gaming session or reboot before testing mangoapp.'
 }

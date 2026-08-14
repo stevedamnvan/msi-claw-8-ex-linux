@@ -1,6 +1,6 @@
 [Unit]
-Description=MSI Claw MangoHud Intel CPU/GPU energy access
-ConditionPathExists=/sys/class/powercap
+Description=MSI Claw MangoHud Intel power and temperature sensor access
+ConditionPathExists=/sys/class/dmi/id/board_name
 After=systemd-modules-load.service
 Before=display-manager.service
 

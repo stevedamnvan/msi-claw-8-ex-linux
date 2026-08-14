@@ -20,7 +20,7 @@ if [ "$(read_value /sys/class/dmi/id/sys_vendor)" != \
 	exit 0
 fi
 
-found=0
+rapl_found=0
 for zone in /sys/class/powercap/intel-rapl:*; do
 	[ -d "$zone" ] || continue
 	zone_name=$(read_value "$zone/name")
@@ -32,10 +32,36 @@ for zone in /sys/class/powercap/intel-rapl:*; do
 
 	chgrp video "$zone/energy_uj"
 	chmod 0440 "$zone/energy_uj"
-	found=1
+	rapl_found=1
 	echo "claw-mangohud-rapl-access: enabled video-group read access for $zone_name at $zone/energy_uj"
 done
 
-if [ "$found" -eq 0 ]; then
+if [ "$rapl_found" -eq 0 ]; then
 	echo "claw-mangohud-rapl-access: no Intel package or uncore energy counter found"
+fi
+
+pmt_found=0
+for endpoint in /sys/class/intel_pmt/telem*; do
+	[ -d "$endpoint" ] || continue
+	guid=$(read_value "$endpoint/guid")
+	case "$guid" in
+		0x3086000|0x03086000) ;;
+		*) continue ;;
+	esac
+
+	size=$(read_value "$endpoint/size")
+	case "$size" in
+		''|*[!0-9]*) continue ;;
+	esac
+	[ "$size" -gt 127 ] || continue
+	[ -e "$endpoint/telem" ] || continue
+
+	chgrp video "$endpoint/telem"
+	chmod 0440 "$endpoint/telem"
+	pmt_found=1
+	echo "claw-mangohud-rapl-access: enabled video-group read access for Panther Lake telemetry at $endpoint/telem"
+done
+
+if [ "$pmt_found" -eq 0 ]; then
+	echo "claw-mangohud-rapl-access: no Panther Lake normal telemetry endpoint found"
 fi
