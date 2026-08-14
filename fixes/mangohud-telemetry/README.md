@@ -4,7 +4,8 @@ This Arch/CachyOS package rebuilds MangoHud `0.8.4` for the **MSI Claw 8
 EX AI+ CG3EM**, board **MS-1T91**. It corrects the battery discharge value
 used by Steam's GameScope performance overlay, adds Intel CPU/GPU power, and
 makes the overlay's VRAM row report the focused Xe client's shared-memory
-residency.
+residency. It also maps both MSI WMI fan tachometers, the CPU package
+temperature, and Panther Lake's real graphics temperature into the overlay.
 
 ## Fixes
 
@@ -58,6 +59,44 @@ while the value is zero, avoiding the initial delay of up to ten seconds when a
 game opens its rendering client after MangoHud starts. This is a per-game
 resident-memory value, not total system RAM or a fixed firmware UMA allocation.
 
+### Fan RPM and temperatures
+
+MangoHud `0.8.4` limits its system `fan` row to `steamdeck_hwmon/fan1_input`.
+The fourth patch discovers `msi_wmi_platform` as well and renders the EX's two
+live tachometers as `fan1/fan2 RPM`. It fixes MangoHud's one-time fan discovery
+state and enables the row in the level-3/extended preset. A system with only
+one supported fan retains the original single-value display.
+
+CPU temperature needs no device workaround. MangoHud's existing CPU path finds
+the `coretemp` sensor labeled `Package id 0`; the level-3 and level-4 presets
+already enable `cpu_temp`.
+
+The integrated Arc B390 has no Xe DRM hwmon directory on this machine, so
+stock MangoHud has no GPU temperature source. Panther Lake does expose a real
+graphics sensor through Intel Platform Monitoring Technology (PMT). Intel's
+public schema for normal P-unit telemetry, GUID `0x03086000`, defines
+`GT_MAX` as the graphics maximum temperature at bits 56–63 of container 15.
+That is byte `15 * 8 + 7 = 127`, encoded as signed 8-bit degrees Celsius.
+
+The patch uses that value only when all of these conditions hold:
+
+- the exact EX vendor, product, and board DMI fields match;
+- the active GPU is integrated Xe;
+- a native Xe hwmon temperature source is absent; and
+- a PMT endpoint reports GUID `0x03086000` and is at least 128 bytes long.
+
+It discovers the endpoint by GUID, not by the unstable `telemN` number. A
+future native Xe hwmon sensor remains preferred. The format and offset come
+from Intel's pinned
+[`PTL/0/ptl_aggregator.xml`](https://github.com/intel/Intel-PMT/blob/0fe763db930d74ce6494ea5ed65ce866ad13613f/xml/PTL/0/ptl_aggregator.xml#L1069-L1136)
+and
+[`ptl_common.xml`](https://github.com/intel/Intel-PMT/blob/0fe763db930d74ce6494ea5ed65ce866ad13613f/xml/PTL/0/ptl_common.xml#L84-L91).
+
+The kernel restricts the raw PMT telemetry file to root. The packaged access
+service retains its original name for upgrade compatibility, but now grants
+the `video` group read access to the exact Panther Lake normal endpoint in
+addition to the two RAPL counters. It changes no sensor value or control.
+
 ## GPU utilization status
 
 This package does **not** alter the GPU-percent calculation. Linux Xe exports
@@ -110,32 +149,42 @@ a raw current near `-63000000` µA, a corrected current near 2–3 A, and a
 plausible draw in watts. While charging, the raw positive current is left
 unchanged.
 
-For CPU/GPU power, confirm the service is active:
+For CPU/GPU power and GPU temperature, confirm the service is active:
 
 ```bash
 systemctl status claw-mangohud-rapl-access.service
 ```
 
 The helper should then print nonzero `CPU package power` and `GPU uncore power`
-readings under load. After the gaming session restarts, Steam's level-3/level-4
-performance overlay should show those metrics and a nonzero VRAM value while a
-game has resident graphics allocations.
+readings under load, two live fan RPM values, `coretemp Package id 0`, and an
+Intel PMT `GT_MAX` GPU temperature. After the gaming session restarts, Steam's
+level-3/level-4 performance overlay should show CPU/GPU temperatures, both fan
+speeds as a pair, the power metrics, and a nonzero VRAM value while a game has
+resident graphics allocations.
 
 ## Validation status
 
-- all three patches apply cleanly to the pinned MangoHud `0.8.4` release
-- the modified battery and Xe telemetry translation units pass compiler checks
+- all four patches apply cleanly to the pinned MangoHud `0.8.4` release
+- the modified battery, Xe telemetry, fan, and preset translation units pass
+  compiler checks
 - `makepkg` completes all 117 build targets and creates the installable package
 - all packaged executable and shared-library dependencies resolve
 - the DMI-gated access helper selects only local `package-0` and `uncore` zones
+  plus PMT normal telemetry GUID `0x03086000`
 - the package installs cleanly and passes Pacman's installed-file verification
 - an unplugged sample decoded `-64931000` µA to `605000` µA and reported 10.40 W
 - the service provides live CPU package and GPU uncore samples to `deck`
 - a local Vulkan probe reported 0.048 GiB of Xe shared memory on its first
   500 ms refresh instead of waiting for the ten-second fallback scan
+- the live sensor inventory reports both MSI WMI tachometers, CPU
+  `Package id 0`, and PMT `GT_MAX`; an idle sample showed 3,809/3,809 RPM,
+  47 C CPU, and 45 C GPU
+- the installed MangoHud reader selected PMT GUID `0x03086000` at byte 127;
+  during an uncapped Vulkan probe, raw and displayed GPU temperature agreed as
+  the value rose from 44 C to 53 C at 75–83% focused Xe load
 
-The remaining live check is a foreground overlay capture after restarting into
-the native GameScope session.
+The remaining live check is a visual foreground overlay capture after
+restarting into the native GameScope session.
 
 ## Remove
 
@@ -150,8 +199,10 @@ reset; sysfs permissions return to the kernel defaults at reboot.
 
 ## Security note
 
-Fine-grained energy counters can be useful to side-channel analysis, which is
-why current kernels restrict them by default. The service exposes only the
-Intel `package-0` and `uncore` counters, only on the exact device, and only to
-members of the local `video` group. Do not broaden them to world-readable on a
-multi-user system.
+Fine-grained energy and platform telemetry can be useful to side-channel
+analysis, which is why current kernels restrict them by default. The service
+exposes only the Intel `package-0` and `uncore` counters and the one Panther
+Lake normal PMT endpoint, only on the exact device, and only to members of the
+local `video` group. Sysfs permissions apply to the whole 3,352-byte PMT block,
+not only byte 127. Do not broaden these files to world-readable on a multi-user
+system.

@@ -3,8 +3,8 @@
 _pkgname=MangoHud
 pkgname=mangohud-claw
 pkgver=0.8.4
-pkgrel=2
-pkgdesc='MangoHud with MSI Claw 8 EX battery, Intel power and shared-memory fixes'
+pkgrel=3
+pkgdesc='MangoHud with MSI Claw 8 EX battery, power, memory, fan and temperature fixes'
 arch=('x86_64')
 url='https://github.com/stevedamnvan/msi-claw-8-ex-linux'
 license=('MIT')
@@ -50,6 +50,7 @@ source=(
 	'0001-battery-fix-msi-claw-8-ex-current.patch'
 	'0002-gpu-power-use-intel-rapl-uncore.patch'
 	'0003-intel-shared-memory-vram.patch'
+	'0004-map-fans-and-panther-lake-gpu-temperature.patch'
 	'claw-mangohud-rapl-access'
 	'claw-mangohud-rapl-access.service'
 	'claw-mangohud-telemetry-status'
@@ -58,9 +59,10 @@ b2sums=('06bdfcd26e14ff544e4dea4e39b8f7da6119d87fc7e14f381cf8c47bba69508a4768b85
         '4be825431fb71c9edf2de9cb46362594049da7cc5720170dbd6de30940c53e1da7850d8b6d98a85eed56df5b2603fff199f4f633eacde66e4d8ea15a74fee784'
         'de665735ba861c27a3d5e2b12e101130faffbb8b2f26a3d3cbc0a9139558bebc95b6a04d130046bb0803b37d5b13215a6611f70361025c2e3ae5e7defd8b2618'
         'f9639342fbc6163e79878dc995fa4445d44515d1b896d0d83143c5f785193bb73f252178120fc2a3177f7f4b4fca6a961c3d5c3db3a068736d160d5d4fc352b3'
-        'c18be368d6fd2fc3b5d807deed2455a225488c11e9ad75f15573071fa10dc3bc01750e64ff5ee3a69c5a40b596a073f789db4e79bc83fd6fafdefe7725683c6d'
-        '3989a61c8749acf56009b3fc47d71eb87076afe6414f4c350320c0a932a0f86df44a193decec3448fe996de3290b2dfea1870b096447cde93527a0848889d2b2'
-        '9499ca8de5e6303f675446fa2f72a31c6e5a0fed4bc85412d9b08dd9b3288f4e994a9e2c4d574e857f9d5a21db083d243a2c9206cb4458a3673accb973876d31')
+        '08ca45dbf8edeba3d87d79fb46d31b146f368a2bcd37855dd14e7b51c56376eff7a2ac6b638ffda7b483f7e9b51d41c8cd5eb00c3567cbbbc10560e57ffe255a'
+        'c0e7e61b570d211b38fa9f88ec1e77d8c794d4d1bf2ed4dd19f8141db2f9b9737430e48440fb0884bbda8efa95b1338ce7a3cc72f7dbb1f92a464a19032994c9'
+        '4ae197d746629c9acfcf4d2bc09c32556971e17cb994abd758a3cc33de439a047ac512c303bc3807e57631e7cc831c8d94fb305aeacbc4de3a7ce413d48c0200'
+        '80d5f3944cc3fdcf657beb8c1421f2d869784923baa89256b9948929ebd95e1eda896334e7cf226d8384383227bc9df1e2eaf4f834cb66bc7f4652e6db732e6c')
 
 prepare() {
 	cd "$_pkgname-v$pkgver"
@@ -68,6 +70,7 @@ prepare() {
 	patch -Np1 -i "$srcdir/0001-battery-fix-msi-claw-8-ex-current.patch"
 	patch -Np1 -i "$srcdir/0002-gpu-power-use-intel-rapl-uncore.patch"
 	patch -Np1 -i "$srcdir/0003-intel-shared-memory-vram.patch"
+	patch -Np1 -i "$srcdir/0004-map-fans-and-panther-lake-gpu-temperature.patch"
 }
 
 build() {

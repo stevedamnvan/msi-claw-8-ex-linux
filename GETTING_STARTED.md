@@ -163,7 +163,8 @@ boost; SteamOS Manager handles Intel Xe clock limits.
 ## 6. Optionally install corrected GameScope telemetry
 
 Install this package if Steam's performance overlay reports impossible battery
-draw, lacks Intel CPU/GPU watts, or shows zero shared-memory VRAM:
+draw, lacks Intel CPU/GPU watts or temperatures, omits the two fan tachometers,
+or shows zero shared-memory VRAM:
 
 ```bash
 sudo pacman -S --needed \
@@ -176,7 +177,8 @@ sudo systemctl enable --now claw-mangohud-rapl-access.service
 Accept Pacman's replacement of the stock 64-bit `mangohud` package with
 `mangohud-claw`. An installed `lib32-mangohud` package remains in place. The
 service grants the local `video` group read access only to the Intel
-`package-0` and `uncore` energy counters and changes no power limit.
+`package-0` and `uncore` energy counters and Panther Lake normal PMT telemetry
+endpoint. It changes no power limit, fan curve, or sensor value.
 
 The metrics have deliberately narrow meanings:
 
@@ -187,6 +189,13 @@ The metrics have deliberately narrow meanings:
 | GPU power | Intel RAPL uncore power because Xe has no DRM hwmon energy sensor |
 | VRAM | Focused game's resident Xe GTT/shared-memory allocations |
 | GPU utilization | Focused game's per-client Xe render activity, not the whole system |
+| Fan RPM | `fan1/fan2` from the `msi_wmi_platform` hwmon device |
+| CPU temperature | `coretemp` sensor labeled `Package id 0` |
+| GPU temperature | Intel PMT `GT_MAX` from Panther Lake normal telemetry GUID `0x03086000` |
+
+The package discovers the PMT endpoint by GUID because its `telemN` index can
+change. The GPU fallback is exact-DMI-gated and is used only while Xe lacks a
+native hwmon temperature source.
 
 ## 7. Reboot once
 
@@ -246,10 +255,12 @@ claw-mangohud-telemetry-status
 
 Disconnect external power for the battery portion of the test. Under load, the
 helper should report plausible battery draw plus nonzero CPU package and GPU
-uncore power. In Gaming Mode, enable Steam's level-3 or level-4 performance
-overlay and launch a game. CPU watts and shared-memory VRAM should become
-nonzero; GPU watts should respond to load. GPU utilization can remain low when
-the focused game is idle or frame limited.
+uncore power, both fan speeds, CPU package temperature, and a PMT `GT_MAX` GPU
+temperature. In Gaming Mode, enable Steam's level-3 or level-4 performance
+overlay and launch a game. The detailed overlay should show `FAN 1/2`, CPU/GPU
+temperatures, CPU watts, and shared-memory VRAM; GPU watts should respond to
+load. GPU utilization can remain low when the focused game is idle or frame
+limited.
 
 ## 9. Update after repository or kernel changes
 
@@ -304,8 +315,11 @@ complete output when reporting a problem.
 
 Restart the entire Gaming Mode session or reboot; replacing the package does
 not replace an already running `mangoapp`. Confirm the RAPL access service is
-active. Test battery telemetry while unplugged and power metrics while a game
-is under load.
+active, despite its compatibility-era name. Run
+`claw-mangohud-telemetry-status`: if GPU temperature says the PMT endpoint is
+not readable, restart `claw-mangohud-rapl-access.service`. Test battery
+telemetry while unplugged and power/temperature metrics while a game is under
+load.
 
 ## 11. Remove the fixes
 
@@ -362,6 +376,9 @@ a helper-independent microphone capture after suspend/resume.
   microphone-resume test described above.
 - The telemetry package corrects specific data paths. It does not convert the
   focused-client Xe utilization metric into whole-system GPU utilization.
+- GPU temperature uses Intel's public Panther Lake PMT `GT_MAX` definition
+  until Xe exposes a native hwmon temperature sensor; the access service makes
+  the matching raw PMT block readable to the local `video` group.
 - These packages track pinned development snapshots and are not substitutes
   for future upstream kernel, SteamOS Manager, or MangoHud releases.
 

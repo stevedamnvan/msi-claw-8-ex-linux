@@ -57,6 +57,7 @@ a runtime-verification claim.
 | `EX-TEL-001` | Battery telemetry | Wrapped discharge current produces impossible watts and time | [MangoHud battery patch](fixes/mangohud-telemetry/0001-battery-fix-msi-claw-8-ex-current.patch) | Unplugged samples verified |
 | `EX-TEL-002` | Power telemetry | Integrated Xe exposes no DRM hwmon energy sensor | [MangoHud RAPL fallback](fixes/mangohud-telemetry/0002-gpu-power-use-intel-rapl-uncore.patch) | CPU package and GPU uncore samples verified |
 | `EX-TEL-003` | Memory telemetry | GameScope's VRAM row ignores focused Xe GTT residency | [MangoHud shared-memory patch](fixes/mangohud-telemetry/0003-intel-shared-memory-vram.patch) | Translation path verified; native foreground capture pending |
+| `EX-TEL-004` | Fan/thermal telemetry | MangoHud cannot see the two MSI fans or integrated Panther Lake GPU temperature | [MangoHud sensor-map patch](fixes/mangohud-telemetry/0004-map-fans-and-panther-lake-gpu-temperature.patch) | Live source mapping verified; native foreground capture pending |
 
 ## `EX-AUD-001`: packaged RT721 recovery workaround
 
@@ -263,6 +264,76 @@ percentage while a game is idle or frame-limited is not evidence of failure.
 Use that foreground capture as the release gate for an upstream MangoHud
 proposal, and keep the shared-memory semantic explicit in its change log.
 
+## `EX-TEL-004`: MSI fan and Panther Lake thermal mapping
+
+### Problem statement and observed surfaces
+
+MangoHud `0.8.4` restricts its system-fan element to
+`steamdeck_hwmon/fan1_input`. On the exact EX, the platform driver instead
+exports two live tachometers through `msi_wmi_platform`; both were observed at
+approximately 3,500–3,900 RPM in automatic mode. Its `pwm*_auto_point*` files
+are fan-curve thresholds, not current temperatures, and must never be relabeled
+as thermal telemetry.
+
+CPU package temperature already has a standard source: `coretemp` with label
+`Package id 0`. No CPU-temperature fallback is introduced.
+
+The integrated Arc B390 (`8086:b080`, Xe) exposes no DRM hwmon directory on the
+tested kernel. It does expose Intel PMT normal P-unit telemetry with GUID
+`0x03086000` and size 3,352 bytes. Intel's public Panther Lake definition names
+bits 56–63 of container 15 `GT_MAX` and describes them as the graphics maximum
+temperature. Its datatype is signed 8-bit Celsius, placing it at byte 127.
+The immutable source references are Intel-PMT commit
+[`0fe763db930d`](https://github.com/intel/Intel-PMT/commit/0fe763db930d74ce6494ea5ed65ce866ad13613f),
+[`ptl_aggregator.xml`](https://github.com/intel/Intel-PMT/blob/0fe763db930d74ce6494ea5ed65ce866ad13613f/xml/PTL/0/ptl_aggregator.xml#L1069-L1136),
+and
+[`ptl_common.xml`](https://github.com/intel/Intel-PMT/blob/0fe763db930d74ce6494ea5ed65ce866ad13613f/xml/PTL/0/ptl_common.xml#L84-L91).
+
+### Implementation boundary
+
+The patch:
+
+- discovers `msi_wmi_platform` by hwmon name and reads `fan1_input` plus
+  `fan2_input` into a combined `fan1/fan2 RPM` row;
+- preserves the original Steam Deck single-fan path;
+- enables that row in MangoHud's level-3/extended preset, where CPU/GPU
+  temperature is already enabled;
+- uses PMT only for an integrated Xe GPU on the exact three-field DMI match,
+  only when native Xe hwmon temperature is absent;
+- selects PMT by GUID and minimum size rather than an unstable `telemN` index;
+  and
+- validates the signed sample as greater than 0 and less than 125 C.
+
+The access service changes the matching PMT file from `root:root 0440` to
+`root:video 0440` after the same exact DMI check. Sysfs permissions cover the
+entire telemetry block, not only the `GT_MAX` byte; this scope and its security
+tradeoff must remain documented. No WMI write, fan-mode change, curve edit, or
+thermal-policy change belongs to this solution.
+
+### Acceptance, upstream split, and retirement
+
+Acceptance requires the status helper to report both live fan values, a
+plausible `coretemp Package id 0`, a readable matching PMT GUID, and a plausible
+`GT_MAX` that responds to graphics load. A native GameScope level-3 or level-4
+capture must then show `FAN 1/2`, CPU temperature, and GPU temperature. Compare
+the PMT byte and displayed value in the same interval; a successful build alone
+does not verify the live decoder.
+
+On 2026-08-14, the installed `0.8.4-3` package selected PMT GUID `0x03086000`
+at `/sys/class/intel_pmt/telem2/telem`, selected
+`coretemp/temp1_input`, and reported both MSI fans. During an uncapped Vulkan
+probe, raw `GT_MAX` rose from 44 C to 53 C while MangoHud reported the same
+49–53 C progression, 75–83% focused Xe load, a 2,300 MHz graphics clock, and
+roughly 11–12 W uncore power. This verifies the live reader and source
+agreement, but not yet the native GameScope rendering of the three rows.
+
+For upstream review, split the generic dual-fan MangoHud work from the Intel
+PMT fallback, provide the Intel schema provenance and live before/after data,
+and preserve native hwmon precedence. Retire the fan portion when packaged
+MangoHud can select both named MSI hwmon channels. Retire the PMT fallback when
+the running Xe driver exports a correct native integrated-GPU temperature
+through hwmon and packaged MangoHud consumes it.
+
 ## Reproduction record
 
 Attach this minimum environment record to every hardware result:
@@ -299,6 +370,7 @@ numbers, UUIDs, account names, or an unreviewed full system journal.
 | Battery | Unplugged with raw current retained | Corrected amps, watts, and time are plausible |
 | CPU/GPU power | Sustained known load | Nonzero package/uncore deltas with correct units |
 | VRAM/GPU load | Foreground native GameScope game | Overlay agrees with focused Xe fdinfo semantics |
+| Fan/thermal telemetry | Foreground native GameScope game under changing load | Both MSI RPM values plus CPU package and PMT `GT_MAX` temperatures agree with their source sensors |
 
 State exactly which rows passed. A release does not inherit a row merely
 because an earlier revision passed it.
