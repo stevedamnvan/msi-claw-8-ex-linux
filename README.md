@@ -68,9 +68,11 @@ telemetry package if you want corrected performance-overlay data.
   battery draw, CPU/GPU power, shared-memory VRAM, fan speeds, and CPU/GPU
   temperatures. The sensor paths are live-tested; a foreground overlay capture
   is still pending.
-- **[Experimental RT721 kernel patch](patches/rt721-power-management/):** A
-  development alternative to the packaged audio workaround. Do not install
-  both. Speaker resume works; a clean microphone-resume test is still pending.
+- **[RT721 kernel patch](patches/rt721-power-management/):** My original audio
+  fix, built into the codec driver. It is now the development
+  and upstream path; use the packaged workaround for normal use and do not
+  install both. Speaker resume works; a clean microphone-resume test is still
+  pending.
 
 Linux `intel_pstate` still manages CPU scaling and boost. Intel Xe clock control
 needs compatible SteamOS Manager support. GPU utilization shows the focused
