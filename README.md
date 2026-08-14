@@ -7,65 +7,73 @@ CG3EM**, board **MS-1T91**.
 > These fixes are hardware-specific. The Claw 8 AI+ A2VM (non-EX) uses a
 > different platform and audio path and is not supported by this repository.
 
+## Start here
+
+For a first installation, follow the
+**[complete getting-started guide](GETTING_STARTED.md)**. It confirms the exact
+hardware, selects matching kernel headers, installs the fixes in a safe order,
+uses one reboot, verifies every component, and provides update and rollback
+steps.
+
+This repository does not install an operating system, select a kernel, modify a
+bootloader, or partition storage. The packages have been tested on CachyOS with
+kernel `7.2.0-rc7-1-cachyos-rc`; other Arch-family kernels require their own
+matching headers.
+
 ## Available fixes
 
-| Area | Fix | Status |
-| --- | --- | --- |
-| Audio | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Cold boot, runtime PM, and speaker resume verified |
-| Audio | [Realtek RT721 SoundWire power workaround](fixes/audio-rt721/) | Working fallback; leaves hidden D0 gates enabled |
-| Power | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Runtime verified on CachyOS 7.2-rc7 |
-| Telemetry | [GameScope battery, Intel power, and shared-VRAM package](fixes/mangohud-telemetry/) | Local telemetry verified; restarted GameScope validation pending |
+| Area | Fix | Recommendation | Status |
+| --- | --- | --- | --- |
+| Audio | [RT721 SoundWire power workaround](fixes/audio-rt721/) | Install for normal use | Speakers and microphone working; see the idle-power limitation |
+| Platform | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Install for TDP, profiles, fans, and charge limits | Runtime verified on the exact device |
+| Telemetry | [GameScope/MangoHud telemetry package](fixes/mangohud-telemetry/) | Optional; install for corrected overlay data | Local paths verified; native foreground overlay capture pending |
+| Audio development | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Kernel builders only; alternative to the workaround | Cold boot, runtime PM, and speaker resume verified; clean microphone-resume test pending |
 
-The audio workaround is DMI-gated and refuses to run unless both the product
-and board identifiers match the EX model. It is intended as a temporary bridge
-until the power sequence can be integrated into the upstream RT721 codec
-driver.
+The normal-user route is the packaged audio workaround, platform-controls DKMS
+backport, and optional MangoHud package. The experimental RT721 kernel patch is
+an upstream-development path, not an additional package to layer on top.
 
-The experimental kernel patch now implements that integration. It applies the
-model-specific D0 and D3 sequences around the existing RT721 runtime-PM and
-DAPM transitions. Keep using the packaged workaround until the patch's
-helper-independent microphone resume test is complete.
+## What the fixes provide
 
-## Quick start
+- Internal speaker and microphone power sequencing for the RT721 SoundWire
+  codec.
+- MSI firmware interfaces for the `custom` performance profile, PL1/SPL
+  8–35 W, PL2/SPPT 9–45 W, both fan curves, fan tachometers, and the battery
+  charge threshold.
+- Corrected GameScope battery discharge watts and remaining time, Intel CPU
+  package and GPU uncore power, and focused-game Xe shared-memory residency in
+  the VRAM row.
 
-Install the headers matching the running kernel plus the build tools. For the
-currently tested CachyOS release:
+CPU scaling and boost remain the kernel's `intel_pstate` responsibility. Intel
+Xe clock control remains a SteamOS Manager function. GPU utilization remains a
+focused-game, per-client Xe metric rather than whole-system utilization.
 
-```bash
-sudo pacman -S --needed base-devel dkms clang linux-cachyos-rc-headers
-git clone https://github.com/stevedamnvan/msi-claw-8-ex-linux.git
-cd msi-claw-8-ex-linux/fixes/audio-rt721
-makepkg -si
-sudo systemctl enable --now claw-rt721-fix.service
-```
+## Project layout
 
-If a different kernel is running, replace `linux-cachyos-rc-headers` with its
-matching headers package. See the [audio fix documentation](fixes/audio-rt721/)
-for verification, manual installation, removal, and limitations.
+- [`GETTING_STARTED.md`](GETTING_STARTED.md) — end-to-end install, validation,
+  maintenance, troubleshooting, and removal
+- [`ENGINEERING.md`](ENGINEERING.md) — formal problem statements, solution
+  records, evidence, upstream provenance, and contribution criteria
+- [`fixes/audio-rt721/`](fixes/audio-rt721/) — packaged temporary audio
+  workaround and technical notes
+- [`fixes/platform-controls/`](fixes/platform-controls/) — SteamOS
+  `msi-wmi-platform` backport and read-only status helper
+- [`fixes/mangohud-telemetry/`](fixes/mangohud-telemetry/) — patched MangoHud
+  package and telemetry status helper
+- [`patches/rt721-power-management/`](patches/rt721-power-management/) —
+  experimental kernel-driver integration
 
-Kernel builders can instead test the
-[in-driver power-management patch](patches/rt721-power-management/). It is
-based on Linux `v7.2-rc7`, whose RT721 source matches CachyOS
-`7.2.0-rc7-1-cachyos-rc`.
-
-The [platform-controls DKMS package](fixes/platform-controls/) backports
-Valve's pending exact-device support for TDP and performance profiles, both fan
-curves, and the battery charge threshold. CPU scaling and Intel Xe GPU clocks
-are already exposed by the kernel and SteamOS Manager; the backport supplies
-the missing MSI firmware interfaces that tie the remaining controls together.
-
-The [MangoHud telemetry package](fixes/mangohud-telemetry/) corrects the EX
-firmware's wrapped battery discharge current for GameScope, enables Intel CPU
-package and integrated-GPU watts through RAPL, and maps the focused Xe client's
-shared-memory residency to the overlay's VRAM row. GPU utilization remains a
-focused-game, per-client Xe metric; the package does not relabel it as
-whole-system utilization.
+Engineers evaluating or upstreaming a change should begin with the
+[engineering reference](ENGINEERING.md), which assigns stable identifiers to
+each solution and separates observed evidence, implementation claims, open
+tests, and retirement conditions.
 
 ## Scope
 
 This repository contains source code and configuration written for Linux. It
-does not contain Windows/Realtek driver binaries, decoded vendor data, firmware,
-or recordings.
+does not contain Windows or Realtek driver binaries, decoded vendor data,
+firmware, or recordings. All hardware-specific changes are gated on the exact
+EX model identifiers.
 
 ## License
 
