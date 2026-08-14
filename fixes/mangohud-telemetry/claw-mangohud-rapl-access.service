@@ -1,5 +1,5 @@
 [Unit]
-Description=MSI Claw MangoHud Intel GPU energy access
+Description=MSI Claw MangoHud Intel CPU/GPU energy access
 ConditionPathExists=/sys/class/powercap
 After=systemd-modules-load.service
 Before=display-manager.service

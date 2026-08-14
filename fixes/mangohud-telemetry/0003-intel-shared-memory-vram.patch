@@ -1,0 +1,64 @@
+From: Steven Lamb <100538383+stevedamnvan@users.noreply.github.com>
+Date: Fri, 14 Aug 2026 00:58:00 -0400
+Subject: [PATCH 3/3] gpu_fdinfo: expose Intel shared memory as VRAM
+
+GameScope presets enable the system VRAM row, while integrated Intel Xe
+memory is available only through the focused client's fdinfo GTT residency.
+Mirror that per-client value into the displayed VRAM metric on integrated
+Intel GPUs.
+
+MangoHud can also initialize just before a game opens its rendering DRM
+client.  Retry fd discovery while the integrated-GPU memory value is zero
+instead of leaving VRAM and load at zero until the ten-second periodic scan.
+Keep the existing interval after a usable client is found.
+---
+ src/gpu_fdinfo.cpp | 5 ++++-
+ src/gpu_fdinfo.h   | 3 ++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
+index ad7d6b0..1524f58 100644
+--- a/src/gpu_fdinfo.cpp
++++ b/src/gpu_fdinfo.cpp
+@@ -797,7 +797,8 @@ void GPU_fdinfo::main_thread()
+         // Recheck fds every 10secs, fixes Mass Effect 1, maybe some others too
+         {
+             auto t = os_time_get_nano() / 1'000'000;
+-            if (t - fdinfo_last_update_ms >= 10'000) {
++            if ((intel_gpu_integrated && metrics.proc_vram_used == 0.0f) ||
++                t - fdinfo_last_update_ms >= 10'000) {
+                 find_fd();
+                 fdinfo_last_update_ms = t;
+             }
+@@ -808,6 +809,8 @@ void GPU_fdinfo::main_thread()
+
+         metrics.load = get_gpu_load();
+         metrics.proc_vram_used = get_memory_used();
++        if (intel_gpu_integrated)
++            metrics.sys_vram_used = metrics.proc_vram_used;
+
+         metrics.powerUsage = get_power_usage();
+         metrics.powerLimit = static_cast<float>(hwmon_sensors["power_limit"].val) / 1'000'000;
+diff --git a/src/gpu_fdinfo.h b/src/gpu_fdinfo.h
+index e4c799b..af36855 100644
+--- a/src/gpu_fdinfo.h
++++ b/src/gpu_fdinfo.h
+@@ -63,6 +63,7 @@ private:
+
+     std::string drm_engine_type = "EMPTY";
+     std::string drm_memory_type = "EMPTY";
++    bool intel_gpu_integrated = false;
+
+     std::vector<std::map<std::string, std::string>> fdinfo_data;
+     void gather_fdinfo_data();
+@@ -215,7 +216,7 @@ public:
+
+         find_hwmon_sensors();
+
+-        const bool intel_gpu_integrated =
++        intel_gpu_integrated =
+             (module == "i915" && drm_memory_type == "drm-resident-system0") ||
+             (module == "xe" && drm_memory_type == "drm-resident-gtt");
+
+--
+2.55.0

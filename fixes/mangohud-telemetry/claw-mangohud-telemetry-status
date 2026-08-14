@@ -50,31 +50,52 @@ if [[ $corrected_current_ua =~ ^-?[0-9]+$ && $voltage_uv =~ ^[0-9]+$ ]]; then
 		'BEGIN { if (current < 0) current = -current; printf "%s: %.2f W\n", label, current * voltage / 1000000000000 }'
 fi
 
-rapl_zone=
-for zone in /sys/class/powercap/intel-rapl:*; do
-	[[ -d $zone ]] || continue
-	[[ $(read_value "$zone/name") == uncore ]] || continue
-	rapl_zone=$zone
-	break
-done
+sample_rapl_power()
+{
+	local wanted=$1
+	local label=$2
+	local rapl_zone= zone first second max delta
 
-if [[ -z $rapl_zone ]]; then
-	printf 'GPU power: unavailable (no Intel uncore RAPL zone)\n'
-elif [[ ! -r $rapl_zone/energy_uj ]]; then
-	printf 'GPU power: unavailable (%s is not readable; enable claw-mangohud-rapl-access.service)\n' \
-		"$rapl_zone/energy_uj"
-else
+	for zone in /sys/class/powercap/intel-rapl:*; do
+		[[ -d $zone ]] || continue
+		[[ $(read_value "$zone/name") == "$wanted" ]] || continue
+		rapl_zone=$zone
+		break
+	done
+
+	if [[ -z $rapl_zone ]]; then
+		printf '%s: unavailable (no Intel %s RAPL zone)\n' "$label" "$wanted"
+		return
+	fi
+
+	if [[ ! -r $rapl_zone/energy_uj ]]; then
+		printf '%s: unavailable (%s is not readable; enable claw-mangohud-rapl-access.service)\n' \
+			"$label" "$rapl_zone/energy_uj"
+		return
+	fi
+
 	first=$(read_value "$rapl_zone/energy_uj")
 	max=$(read_value "$rapl_zone/max_energy_range_uj")
 	sleep 0.5
 	second=$(read_value "$rapl_zone/energy_uj")
+
+	if [[ ! $first =~ ^[0-9]+$ || ! $second =~ ^[0-9]+$ || ! $max =~ ^[0-9]+$ ]]; then
+		printf '%s: unavailable (invalid RAPL sample)\n' "$label"
+		return
+	fi
+
 	if (( second >= first )); then
 		delta=$((second - first))
 	else
 		delta=$((max - first + second))
 	fi
-	awk -v delta="$delta" 'BEGIN { printf "GPU uncore power: %.2f W\n", delta / 500000 }'
-fi
+
+	awk -v label="$label" -v delta="$delta" \
+		'BEGIN { printf "%s: %.2f W\n", label, delta / 500000 }'
+}
+
+sample_rapl_power package-0 'CPU package power'
+sample_rapl_power uncore 'GPU uncore power'
 
 printf 'MangoHud package: '
 pacman -Q mangohud-claw 2>/dev/null || pacman -Q mangohud 2>/dev/null || printf 'not installed\n'

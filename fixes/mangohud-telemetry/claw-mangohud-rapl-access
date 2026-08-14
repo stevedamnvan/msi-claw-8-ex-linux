@@ -23,15 +23,19 @@ fi
 found=0
 for zone in /sys/class/powercap/intel-rapl:*; do
 	[ -d "$zone" ] || continue
-	[ "$(read_value "$zone/name")" = "uncore" ] || continue
+	zone_name=$(read_value "$zone/name")
+	case "$zone_name" in
+		package-0|uncore) ;;
+		*) continue ;;
+	esac
 	[ -e "$zone/energy_uj" ] || continue
 
 	chgrp video "$zone/energy_uj"
 	chmod 0440 "$zone/energy_uj"
 	found=1
-	echo "claw-mangohud-rapl-access: enabled video-group read access at $zone/energy_uj"
+	echo "claw-mangohud-rapl-access: enabled video-group read access for $zone_name at $zone/energy_uj"
 done
 
 if [ "$found" -eq 0 ]; then
-	echo "claw-mangohud-rapl-access: no Intel uncore energy counter found"
+	echo "claw-mangohud-rapl-access: no Intel package or uncore energy counter found"
 fi
