@@ -13,9 +13,9 @@ This repository collects the fixes that worked for me. I am sharing them to
 give other Claw EX owners a practical starting point and to provide useful
 evidence that can help developers build proper long-term support.
 
-I started by modifying SteamOS recovery images with another coding agent. That
-approach became hard to maintain, so I moved to CachyOS and the cleaner,
-package-managed workflow documented here.
+I first tried modifying SteamOS recovery images. That approach was extremely
+buggy and hard to maintain, so I abandoned it. This CachyOS-based project is my
+latest go at getting the Claw EX working well.
 
 This is an unofficial, experimental project. It is not affiliated with MSI or
 the projects referenced here. Results apply to the tested setup described here,
