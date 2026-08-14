@@ -1,7 +1,7 @@
 # MSI Claw 8 EX AI+ Linux fixes
 
-My journey getting Arch Linux and CachyOS working on the **MSI Claw 8 EX AI+
-CG3EM**, board **MS-1T91**.
+My journey getting Linux working on the **MSI Claw 8 EX AI+ CG3EM**, board
+**MS-1T91**.
 
 > [!WARNING]
 > This repository supports only the Claw 8 EX AI+ CG3EM / MS-1T91. The Claw 8
@@ -11,10 +11,10 @@ CG3EM**, board **MS-1T91**.
 
 This repository collects the fixes that worked for me. I am sharing them to
 give other Claw EX owners a practical starting point and to provide useful
-evidence for proper Linux, SteamOS, MangoHud, Arch Linux, and CachyOS support.
+evidence that can help developers build proper long-term support.
 
-This is an unofficial, experimental project. It is not an MSI, Valve, Arch
-Linux, or CachyOS product. Results apply to the tested setup described here,
+This is an unofficial, experimental project. It is not affiliated with MSI or
+the projects referenced here. Results apply to the tested setup described here,
 and local workarounds should disappear as official fixes become available.
 
 For test evidence and upstream notes, see [ENGINEERING.md](ENGINEERING.md).
