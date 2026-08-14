@@ -1,0 +1,37 @@
+#!/bin/sh
+
+set -eu
+
+read_value()
+{
+	value=
+	if [ -r "$1" ]; then
+		IFS= read -r value < "$1" || true
+	fi
+	printf '%s' "$value"
+}
+
+if [ "$(read_value /sys/class/dmi/id/sys_vendor)" != \
+	"Micro-Star International Co., Ltd." ] ||
+   [ "$(read_value /sys/class/dmi/id/product_name)" != \
+	"Claw 8 EX AI+ CG3EM" ] ||
+   [ "$(read_value /sys/class/dmi/id/board_name)" != "MS-1T91" ]; then
+	echo "claw-mangohud-rapl-access: unsupported DMI; no permissions changed"
+	exit 0
+fi
+
+found=0
+for zone in /sys/class/powercap/intel-rapl:*; do
+	[ -d "$zone" ] || continue
+	[ "$(read_value "$zone/name")" = "uncore" ] || continue
+	[ -e "$zone/energy_uj" ] || continue
+
+	chgrp video "$zone/energy_uj"
+	chmod 0440 "$zone/energy_uj"
+	found=1
+	echo "claw-mangohud-rapl-access: enabled video-group read access at $zone/energy_uj"
+done
+
+if [ "$found" -eq 0 ]; then
+	echo "claw-mangohud-rapl-access: no Intel uncore energy counter found"
+fi

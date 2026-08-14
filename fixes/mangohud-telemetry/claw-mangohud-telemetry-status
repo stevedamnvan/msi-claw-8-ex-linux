@@ -1,0 +1,80 @@
+#!/bin/bash
+
+set -euo pipefail
+
+read_value()
+{
+	local value=
+	if [[ -r $1 ]]; then
+		IFS= read -r value < "$1" || true
+	fi
+	printf '%s' "$value"
+}
+
+vendor=$(read_value /sys/class/dmi/id/sys_vendor)
+product=$(read_value /sys/class/dmi/id/product_name)
+board=$(read_value /sys/class/dmi/id/board_name)
+
+printf 'Device: %s / %s / %s\n' "$vendor" "$product" "$board"
+
+if [[ $vendor != 'Micro-Star International Co., Ltd.' ||
+      $product != 'Claw 8 EX AI+ CG3EM' || $board != 'MS-1T91' ]]; then
+	printf 'Result: unsupported DMI; no Claw telemetry correction applies\n' >&2
+	exit 1
+fi
+
+battery=/sys/class/power_supply/BAT1
+status=$(read_value "$battery/status")
+raw_current_ua=$(read_value "$battery/current_now")
+voltage_uv=$(read_value "$battery/voltage_now")
+corrected_current_ua=$raw_current_ua
+
+if [[ $status == Discharging && $raw_current_ua =~ ^-?[0-9]+$ &&
+      $raw_current_ua -ge -65536000 && $raw_current_ua -le -32768000 ]]; then
+	corrected_current_ua=$((raw_current_ua + 65536000))
+fi
+
+printf 'Battery: status=%s raw_current=%s uA corrected_current=%s uA voltage=%s uV\n' \
+	"$status" "$raw_current_ua" "$corrected_current_ua" "$voltage_uv"
+
+if [[ $corrected_current_ua =~ ^-?[0-9]+$ && $voltage_uv =~ ^[0-9]+$ ]]; then
+	if [[ $status == Discharging ]]; then
+		power_label='Battery draw'
+	elif [[ $status == Charging ]]; then
+		power_label='Battery charge-rate equivalent'
+	else
+		power_label='Battery current-rate equivalent'
+	fi
+	awk -v label="$power_label" -v current="$corrected_current_ua" \
+		-v voltage="$voltage_uv" \
+		'BEGIN { if (current < 0) current = -current; printf "%s: %.2f W\n", label, current * voltage / 1000000000000 }'
+fi
+
+rapl_zone=
+for zone in /sys/class/powercap/intel-rapl:*; do
+	[[ -d $zone ]] || continue
+	[[ $(read_value "$zone/name") == uncore ]] || continue
+	rapl_zone=$zone
+	break
+done
+
+if [[ -z $rapl_zone ]]; then
+	printf 'GPU power: unavailable (no Intel uncore RAPL zone)\n'
+elif [[ ! -r $rapl_zone/energy_uj ]]; then
+	printf 'GPU power: unavailable (%s is not readable; enable claw-mangohud-rapl-access.service)\n' \
+		"$rapl_zone/energy_uj"
+else
+	first=$(read_value "$rapl_zone/energy_uj")
+	max=$(read_value "$rapl_zone/max_energy_range_uj")
+	sleep 0.5
+	second=$(read_value "$rapl_zone/energy_uj")
+	if (( second >= first )); then
+		delta=$((second - first))
+	else
+		delta=$((max - first + second))
+	fi
+	awk -v delta="$delta" 'BEGIN { printf "GPU uncore power: %.2f W\n", delta / 500000 }'
+fi
+
+printf 'MangoHud package: '
+pacman -Q mangohud-claw 2>/dev/null || pacman -Q mangohud 2>/dev/null || printf 'not installed\n'

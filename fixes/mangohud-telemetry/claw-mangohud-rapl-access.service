@@ -1,0 +1,13 @@
+[Unit]
+Description=MSI Claw MangoHud Intel GPU energy access
+ConditionPathExists=/sys/class/powercap
+After=systemd-modules-load.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/msi-claw-8-ex-linux/claw-mangohud-rapl-access
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

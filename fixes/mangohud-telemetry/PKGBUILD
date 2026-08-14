@@ -1,0 +1,96 @@
+# Maintainer: stevedamnvan <100538383+stevedamnvan@users.noreply.github.com>
+
+_pkgname=MangoHud
+pkgname=mangohud-claw
+pkgver=0.8.4
+pkgrel=1
+pkgdesc='MangoHud with MSI Claw 8 EX battery and Intel iGPU power fixes'
+arch=('x86_64')
+url='https://github.com/stevedamnvan/msi-claw-8-ex-linux'
+license=('MIT')
+makedepends=(
+	'appstream'
+	'git'
+	'glslang'
+	'libxrandr'
+	'meson'
+	'python-mako'
+)
+depends=(
+	'dbus'
+	'fmt'
+	'glfw'
+	'hicolor-icon-theme'
+	'libglvnd'
+	'libx11'
+	'libxkbcommon'
+	'python'
+	'python-matplotlib'
+	'python-numpy'
+	'vulkan-icd-loader'
+	'wayland'
+)
+optdepends=(
+	'gamescope: use MangoApp as a GameScope overlay'
+)
+provides=("mangohud=$pkgver")
+conflicts=(
+	'mangohud'
+	'mangohud-common'
+	'mangohud-common-wayland'
+	'mangohud-common-x11'
+	'mangoapp'
+	'mangohud-x11'
+	'mangohud-wayland'
+)
+replaces=('mangohud')
+install=mangohud-claw.install
+source=(
+	"$pkgname-$pkgver.tar.xz::https://github.com/flightlessmango/MangoHud/releases/download/v$pkgver/$_pkgname-v$pkgver-Source.tar.xz"
+	'0001-battery-fix-msi-claw-8-ex-current.patch'
+	'0002-gpu-power-use-intel-rapl-uncore.patch'
+	'claw-mangohud-rapl-access'
+	'claw-mangohud-rapl-access.service'
+	'claw-mangohud-telemetry-status'
+)
+b2sums=('06bdfcd26e14ff544e4dea4e39b8f7da6119d87fc7e14f381cf8c47bba69508a4768b8584600424adb8ca2a2f6f4c2d84d63683addeb83bd0dd9a1e055febdb8'
+        '4be825431fb71c9edf2de9cb46362594049da7cc5720170dbd6de30940c53e1da7850d8b6d98a85eed56df5b2603fff199f4f633eacde66e4d8ea15a74fee784'
+        'de665735ba861c27a3d5e2b12e101130faffbb8b2f26a3d3cbc0a9139558bebc95b6a04d130046bb0803b37d5b13215a6611f70361025c2e3ae5e7defd8b2618'
+        '640ea86211cbb6b2f71a47a5388167838e104722362607092720fc1301abd3b9f3ca4f11631f39b14c61c6e5db3512e28720513a01a697d288232edb70349c6d'
+        'ec785950060a480ab5bb8d95ced94a7ea5ab8d9fafa34624c43395205c10eb8d4fab2c8da74fea8b0f532574defc4c27dd41809a6516f06f26cacd167de9abf1'
+        '7a3a60179c5f0a91366d02fa09f1f733232efc3e2f5438e5f1b7dcd0c2939f88574c2fca10b274ca2c86b430ae5a61d7b19a5c5bfd28cd57df3ef4365ee970b0')
+
+prepare() {
+	cd "$_pkgname-v$pkgver"
+
+	patch -Np1 -i "$srcdir/0001-battery-fix-msi-claw-8-ex-current.patch"
+	patch -Np1 -i "$srcdir/0002-gpu-power-use-intel-rapl-uncore.patch"
+}
+
+build() {
+	arch-meson "$_pkgname-v$pkgver" build \
+		-Dmangoapp=true \
+		-Dmangohudctl=true \
+		-Dtests=disabled \
+		-Dwith_xnvctrl=disabled
+	meson compile -C build
+}
+
+check() {
+	meson test -C build --print-errorlogs || :
+}
+
+package() {
+	meson install -C build --destdir "$pkgdir"
+
+	install -Dm644 "$srcdir/$_pkgname-v$pkgver/LICENSE" \
+		-t "$pkgdir/usr/share/licenses/$pkgname/"
+	rm --force "$pkgdir/usr/lib/libimgui.a"
+
+	install -Dm755 "$srcdir/claw-mangohud-rapl-access" \
+		"$pkgdir/usr/lib/msi-claw-8-ex-linux/claw-mangohud-rapl-access"
+	install -Dm644 "$srcdir/claw-mangohud-rapl-access.service" \
+		"$pkgdir/usr/lib/systemd/system/claw-mangohud-rapl-access.service"
+	install -Dm755 "$srcdir/claw-mangohud-telemetry-status" \
+		"$pkgdir/usr/bin/claw-mangohud-telemetry-status"
+}
