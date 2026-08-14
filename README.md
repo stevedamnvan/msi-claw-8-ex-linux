@@ -14,7 +14,7 @@ CG3EM**, board **MS-1T91**.
 | Audio | [RT721 in-driver power-management patch](patches/rt721-power-management/) | Cold boot, runtime PM, and speaker resume verified |
 | Audio | [Realtek RT721 SoundWire power workaround](fixes/audio-rt721/) | Working fallback; leaves hidden D0 gates enabled |
 | Power | [SteamOS MSI platform-controls backport](fixes/platform-controls/) | Runtime verified on CachyOS 7.2-rc7 |
-| Telemetry | [GameScope battery and Intel GPU power package](fixes/mangohud-telemetry/) | Installed and RAPL read verified; live GameScope validation pending |
+| Telemetry | [GameScope battery, Intel power, and shared-VRAM package](fixes/mangohud-telemetry/) | Local telemetry verified; restarted GameScope validation pending |
 
 The audio workaround is DMI-gated and refuses to run unless both the product
 and board identifiers match the EX model. It is intended as a temporary bridge
@@ -55,8 +55,9 @@ are already exposed by the kernel and SteamOS Manager; the backport supplies
 the missing MSI firmware interfaces that tie the remaining controls together.
 
 The [MangoHud telemetry package](fixes/mangohud-telemetry/) corrects the EX
-firmware's wrapped battery discharge current for GameScope and adds Intel
-integrated-GPU watts through the RAPL uncore counter. GPU utilization remains a
+firmware's wrapped battery discharge current for GameScope, enables Intel CPU
+package and integrated-GPU watts through RAPL, and maps the focused Xe client's
+shared-memory residency to the overlay's VRAM row. GPU utilization remains a
 focused-game, per-client Xe metric; the package does not relabel it as
 whole-system utilization.
 
